@@ -8,8 +8,9 @@
 #ifdef ROCKSDB_OPENSSL_AES_CTR
 #ifndef ROCKSDB_LITE
 
-#include "openssl/aes.h"
-#include "openssl/evp.h"
+#include <openssl/aes.h>
+#include <openssl/evp.h>
+
 #include "rocksdb/env_openssl.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -32,16 +33,21 @@ static EncryptMarker kEncryptMarker = "Encrypt";
 // long term:  code_version could be used in a switch statement or factory
 // prefix version 0 is 12 byte sha1 description hash, 128 bit (16 byte)
 // nounce (assumed to be packed/byte aligned)
-typedef struct {
-  uint8_t key_description_[EVP_MAX_MD_SIZE];  // max md is 64
-  uint8_t nonce_[AES_BLOCK_SIZE];             // block size is 16
-} PrefixVersion0;
+struct PrefixVersion0 {
+  uint8_t descriptor[EVP_MAX_MD_SIZE];  // max md is 64
+  uint8_t nonce[AES_BLOCK_SIZE];             // block size is 16
+};
 
 class AESBlockAccessCipherStream : public BlockAccessCipherStream {
  public:
-  AESBlockAccessCipherStream(const AesCtrKey& key, uint8_t code_version,
+  static Status CreateCipherStream(const AesCtrKey& key, 
+                                   const uint8_t nonce[],
+                                   std::unique_ptr<BlockAccessCipherStream>* result);
+
+  AESBlockAccessCipherStream(const std::shared_ptr<UnixLibCrypto>& crypto,
+                             const AesCtrKey& key, 
                              const uint8_t nonce[])
-      : key_(key), code_version_(code_version) {
+    : crypto_(crypto), key_(key) {
     memcpy(&nonce_, nonce, AES_BLOCK_SIZE);
   }
 
@@ -69,9 +75,9 @@ class AESBlockAccessCipherStream : public BlockAccessCipherStream {
   Status DecryptBlock(uint64_t, char*, char*) override {
     return Status::NotSupported("Wrong EncryptionProvider assumed");
   };
-
+private:
+  std::shared_ptr<UnixLibCrypto> crypto_;
   AesCtrKey key_;
-  uint8_t code_version_;
   uint8_t nonce_[AES_BLOCK_SIZE];
 };
 
@@ -109,7 +115,8 @@ class EncryptedRandomRWFileV2 : public EncryptedRandomRWFile {
   // Pass aligned buffer when use_direct_io() returns true.
   Status Write(uint64_t offset, const Slice& data) override;
 };
-
+Status CreateSslAesCtrProvider(const ConfigOptions& config_options, const std::string& value,
+                               std::shared_ptr<EncryptionProvider>* provider);
 }  // namespace ROCKSDB_NAMESPACE
 
 #endif  // ROCKSDB_LITE

@@ -18,50 +18,49 @@
 #include <algorithm>
 #include <cctype>
 #include <iostream>
+#include <map>
 
 #include "env.h"
 #include "rocksdb/env_encryption.h"
-#include "util/aligned_buffer.h"
-#include "util/coding.h"
-#include "util/library_loader.h"
-#include "util/random.h"
-
+#include "util/mutexlock.h"
 #endif
 
 namespace ROCKSDB_NAMESPACE {
+class UnixLibCrypto;
 
 #ifndef ROCKSDB_LITE
 
-struct ShaDescription {
-  uint8_t desc[EVP_MAX_MD_SIZE];
-  bool valid;
+class ShaDescription {
+public:
+  static Status Create(const std::string& descriptor, ShaDescription *sha);
+  static Status Create(const uint8_t* desc, size_t size, ShaDescription *sha);
 
-  ShaDescription() : valid(false) { memset(desc, 0, EVP_MAX_MD_SIZE); }
+  ShaDescription() {
+    memset(desc, 0, EVP_MAX_MD_SIZE);
+    len = 0;
+  }
 
   ShaDescription(const ShaDescription& rhs) { *this = rhs; }
 
   ShaDescription& operator=(const ShaDescription& rhs) {
     memcpy(desc, rhs.desc, sizeof(desc));
-    valid = rhs.valid;
+    len = rhs.len;
     return *this;
   }
 
-  ShaDescription(uint8_t* desc_in, size_t desc_len) : valid(false) {
+  ShaDescription(const uint8_t* _desc, size_t _len) {
+    assert(_len <= EVP_MAX_MD_SIZE);
     memset(desc, 0, EVP_MAX_MD_SIZE);
-    if (desc_len <= EVP_MAX_MD_SIZE) {
-      memcpy(desc, desc_in, desc_len);
-      valid = true;
-    }
+    memcpy(desc, _desc, _len);
+    len = _len;
   }
-
-  ShaDescription(const std::string& key_desc_str);
 
   // see AesCtrKey destructor below.  This data is not really
   //  essential to clear, but trying to set pattern for future work.
   // goal is to explicitly remove desc from memory once no longer needed
   ~ShaDescription() {
     memset(desc, 0, EVP_MAX_MD_SIZE);
-    valid = false;
+    len = 0;
   }
 
   bool operator<(const ShaDescription& rhs) const {
@@ -69,32 +68,28 @@ struct ShaDescription {
   }
 
   bool operator==(const ShaDescription& rhs) const {
-    return 0 == memcmp(desc, rhs.desc, EVP_MAX_MD_SIZE) && valid == rhs.valid;
+    return 0 == memcmp(desc, rhs.desc, EVP_MAX_MD_SIZE) && len == rhs.len;
   }
-
-  bool IsValid() const { return valid; }
+  std::string ToString() const;
+  uint8_t desc[EVP_MAX_MD_SIZE];
+  size_t  len;
 };
-
-std::shared_ptr<ShaDescription> NewShaDescription(
-    const std::string& key_desc_str);
 
 struct AesCtrKey {
   uint8_t key[EVP_MAX_KEY_LENGTH];
-  bool valid;
+  size_t  len;
+  static Status Create(const uint8_t* key_in, size_t key_len, AesCtrKey *aes_key);
+  
+  AesCtrKey() { memset(key, 0, EVP_MAX_KEY_LENGTH); }
 
-  AesCtrKey() : valid(false) { memset(key, 0, EVP_MAX_KEY_LENGTH); }
-
-  AesCtrKey(const uint8_t* key_in, size_t key_len) : valid(false) {
+  AesCtrKey(const uint8_t* key_in, size_t key_len)  {
+    assert(key_len <= EVP_MAX_KEY_LENGTH);
     memset(key, 0, EVP_MAX_KEY_LENGTH);
     if (key_len <= EVP_MAX_KEY_LENGTH) {
       memcpy(key, key_in, key_len);
-      valid = true;
-    } else {
-      valid = false;
+      len = key_len;
     }
   }
-
-  AesCtrKey(const std::string& hex_key_str);
 
   // see Writing Solid Code, 2nd edition
   //   Chapter 9, page 321, Managing Secrets in Memory ... bullet 4 "Scrub the
@@ -106,191 +101,41 @@ struct AesCtrKey {
   // goal is to explicitly remove key from memory once no longer needed
   ~AesCtrKey() {
     memset(key, 0, EVP_MAX_KEY_LENGTH);
-    valid = false;
+    len = 0;
   }
 
   bool operator==(const AesCtrKey& rhs) const {
     return (0 == memcmp(key, rhs.key, EVP_MAX_KEY_LENGTH)) &&
-           (valid == rhs.valid);
+      (len == rhs.len);
   }
-
-  bool IsValid() const { return valid; }
+  std::string ToString() const;
 };
 
 // code tests for 64 character hex string to yield 32 byte binary key
 std::shared_ptr<AesCtrKey> NewAesCtrKey(const std::string& hex_key_str);
 
-class CTREncryptionProviderV2 : public EncryptionProvider {
+class SslAesCtrEncryptionProvider : public EncryptionProvider {
  public:
-  CTREncryptionProviderV2() = delete;
-
-  CTREncryptionProviderV2(const CTREncryptionProvider&&) = delete;
-
-  CTREncryptionProviderV2(const ShaDescription& key_desc_in,
-                          const AesCtrKey& key_in)
-      : valid_(false), key_desc_(key_desc_in), key_(key_in) {
-    valid_ = key_desc_.IsValid() && key_.IsValid();
-  }
-
-  CTREncryptionProviderV2(const std::string& key_desc_str,
-                          const uint8_t unformatted_key[], int bytes)
-      : valid_(false), key_desc_(key_desc_str), key_(unformatted_key, bytes) {
-    valid_ = key_desc_.IsValid() && key_.IsValid();
-  }
+  explicit SslAesCtrEncryptionProvider(const std::shared_ptr<UnixLibCrypto>& crypto);
 
   size_t GetPrefixLength() const override;
+  const char *Name() const override;
 
+  Status AddCipher(const std::string& descriptor, const char* cipher, size_t cipher_len, bool for_write) override;
   Status CreateNewPrefix(const std::string& /*fname*/, char* prefix,
                          size_t prefixLength) const override;
 
   Status CreateCipherStream(
       const std::string& /*fname*/, const EnvOptions& /*options*/,
       Slice& /*prefix*/,
-      std::unique_ptr<BlockAccessCipherStream>* /*result*/) override {
-    return Status::NotSupported("Wrong EncryptionProvider assumed");
-  }
-
-  virtual BlockAccessCipherStream* CreateCipherStream2(
-      uint8_t code_version, const uint8_t nonce[]) const;
-
-  bool Valid() const { return valid_; };
-  const ShaDescription& key_desc() const { return key_desc_; };
-  const AesCtrKey& key() const { return key_; };
-
+      std::unique_ptr<BlockAccessCipherStream>* /*result*/) override;
  protected:
-  bool valid_;
-  ShaDescription key_desc_;
-  AesCtrKey key_;
-};
-
-std::shared_ptr<CTREncryptionProviderV2> NewCTREncryptionProviderV2(
-    const std::shared_ptr<ShaDescription>& key_desc,
-    const std::shared_ptr<AesCtrKey>& aes_ctr_key);
-
-std::shared_ptr<CTREncryptionProviderV2> NewCTREncryptionProviderV2(
-    const std::string& key_desc_str, const uint8_t binary_key[], int bytes);
-
-// OpenSSLEnv implements an Env wrapper that adds encryption to files stored
-// on disk.
-class OpenSSLEnv : public EnvWrapper {
- public:
-  using WriteKey =
-      std::pair<ShaDescription, std::shared_ptr<const CTREncryptionProviderV2>>;
-  using ReadKeys =
-      std::map<ShaDescription, std::shared_ptr<const CTREncryptionProviderV2>>;
-
-  static Env* Default();
-  static Env* Default(ReadKeys encrypt_read, WriteKey encrypt_write);
-
-  OpenSSLEnv(Env* base_env);
-
-  OpenSSLEnv(Env* base_env, ReadKeys encrypt_read, WriteKey encrypt_write);
-
-  bool IsWriteEncrypted() const;
-
-  // NewSequentialFile opens a file for sequential reading.
-  Status NewSequentialFile(const std::string& fname,
-                           std::unique_ptr<SequentialFile>* result,
-                           const EnvOptions& options) override;
-
-  // NewRandomAccessFile opens a file for random read access.
-  Status NewRandomAccessFile(const std::string& fname,
-                             std::unique_ptr<RandomAccessFile>* result,
-                             const EnvOptions& options) override;
-
-  // NewWritableFile opens a file for sequential writing.
-  Status NewWritableFile(const std::string& fname,
-                         std::unique_ptr<WritableFile>* result,
-                         const EnvOptions& options) override;
-
-  // Create an object that writes to a new file with the specified
-  // name.  Deletes any existing file with the same name and creates a
-  // new file.  On success, stores a pointer to the new file in
-  // *result and returns OK.  On failure stores nullptr in *result and
-  // returns non-OK.
-  //
-  // The returned file will only be accessed by one thread at a time.
-  Status ReopenWritableFile(const std::string& fname,
-                            std::unique_ptr<WritableFile>* result,
-                            const EnvOptions& options) override;
-
-  // Reuse an existing file by renaming it and opening it as writable.
-  Status ReuseWritableFile(const std::string& fname,
-                           const std::string& old_fname,
-                           std::unique_ptr<WritableFile>* result,
-                           const EnvOptions& options) override;
-
-  // Open `fname` for random read and write, if file doesn't exist the file
-  // will be created.  On success, stores a pointer to the new file in
-  // *result and returns OK.  On failure returns non-OK.
-  //
-  // The returned file will only be accessed by one thread at a time.
-  Status NewRandomRWFile(const std::string& fname,
-                         std::unique_ptr<RandomRWFile>* result,
-                         const EnvOptions& options) override;
-
-  // Store in *result the attributes of the children of the specified directory.
-  // In case the implementation lists the directory prior to iterating the files
-  // and files are concurrently deleted, the deleted files will be omitted from
-  // result.
-  // The name attributes are relative to "dir".
-  // Original contents of *results are dropped.
-  // Returns OK if "dir" exists and "*result" contains its children.
-  //         NotFound if "dir" does not exist, the calling process does not have
-  //                  permission to access "dir", or if "dir" is invalid.
-  //         IOError if an IO Error was encountered
-  Status GetChildrenFileAttributes(
-      const std::string& dir, std::vector<FileAttributes>* result) override;
-
-  // Store the size of fname in *file_size.
-  Status GetFileSize(const std::string& fname, uint64_t* file_size) override;
-
-  // only needed for GetChildrenFileAttributes & GetFileSize
-  virtual Status GetEncryptionProvider(
-      const std::string& fname,
-      std::shared_ptr<const CTREncryptionProviderV2>& provider);
-
-  bool IsValid() const { return valid_; }
-
- protected:
-  void init();
-
-  void SetKeys(ReadKeys encrypt_read, WriteKey encrypt_write);
-
-  template <class TypeFile>
-  Status ReadSeqEncryptionPrefix(
-      TypeFile* f, std::shared_ptr<const CTREncryptionProviderV2>& provider,
-      std::unique_ptr<BlockAccessCipherStream>& stream);
-
-  template <class TypeFile>
-  Status ReadRandEncryptionPrefix(
-      TypeFile* f, std::shared_ptr<const CTREncryptionProviderV2>& provider,
-      std::unique_ptr<BlockAccessCipherStream>& stream);
-
-  template <class TypeFile>
-  Status WriteSeqEncryptionPrefix(
-      TypeFile* f, std::shared_ptr<const CTREncryptionProviderV2> provider,
-      std::unique_ptr<BlockAccessCipherStream>& stream);
-
-  template <class TypeFile>
-  Status WriteRandEncryptionPrefix(
-      TypeFile* f, std::shared_ptr<const CTREncryptionProviderV2> provider,
-      std::unique_ptr<BlockAccessCipherStream>& stream);
-
- public:
+  Status TEST_Initialize() override;
   std::shared_ptr<UnixLibCrypto> crypto_;
-
- protected:
-  ReadKeys encrypt_read_;
-  WriteKey encrypt_write_;
+  std::map<ShaDescription, AesCtrKey> read_keys_;
+  ShaDescription write_key_;
   mutable port::RWMutex key_lock_;
-  bool valid_;
 };
-
-// Returns an Env that encrypts data when stored on disk and decrypts data when
-// read from disk.  Prefer OpenSSLEnv::Default().
-Env* NewOpenSSLEnv(Env* base_env, OpenSSLEnv::ReadKeys encrypt_read,
-                   OpenSSLEnv::WriteKey encrypt_write);
 
 #endif  // ROCKSDB_LITE
 

@@ -3,6 +3,8 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "env/env_openssl_impl.h"
+#include "rocksdb/convenience.h"
+#include "rocksdb/env_encryption.h"
 #include "rocksdb/options.h"
 #include "rocksdb/sst_file_writer.h"
 #include "test_util/testharness.h"
@@ -17,7 +19,7 @@ class EnvOpenssl_Sha1 {};
 TEST(EnvOpenssl_Sha1, Default) {
   ShaDescription desc;
 
-  ASSERT_FALSE(desc.IsValid());
+  ASSERT_EQ(desc.len, 0);
   for (size_t idx = 0; idx < sizeof(desc.desc); ++idx) {
     ASSERT_TRUE('\0' == desc.desc[idx]);
   }
@@ -34,51 +36,42 @@ TEST(EnvOpenssl_Sha1, Constructors) {
     bytes[idx] = idx + 1;
   }
 
-  ShaDescription desc_bad1(bytes, 128);
-  ASSERT_FALSE(desc_bad1.IsValid());
+  ShaDescription bad, good;
+  ASSERT_NOK(ShaDescription::Create(bytes, 128, &bad));
+  ASSERT_NOK(ShaDescription::Create(bytes, 65, &bad));
 
-  ShaDescription desc_bad2(bytes, 65);
-  ASSERT_FALSE(desc_bad2.IsValid());
+  ASSERT_OK(ShaDescription::Create(bytes, 64, &good));
+  ptr = (uint8_t*)memchr(good.desc, 0, 64);
+  ASSERT_EQ(ptr, nullptr);
 
-  ShaDescription desc_good1(bytes, 64);
-  ASSERT_TRUE(desc_good1.IsValid());
-  ptr = (uint8_t*)memchr(desc_good1.desc, 0, 64);
-  ASSERT_TRUE(nullptr == ptr);
+  ASSERT_OK(ShaDescription::Create(bytes, 63, &good));
+  ptr = (uint8_t*)memchr(good.desc, 0, 64);
+  ASSERT_TRUE(&good.desc[63] == ptr);
 
-  ShaDescription desc_good2(bytes, 63);
-  ASSERT_TRUE(desc_good2.IsValid());
-  ptr = (uint8_t*)memchr(desc_good2.desc, 0, 64);
-  ASSERT_TRUE(&desc_good2.desc[63] == ptr);
+  ASSERT_OK(ShaDescription::Create(bytes, 1, &good));
+  ptr = (uint8_t*)memchr(good.desc, 0, 64);
+  ASSERT_TRUE(&good.desc[1] == ptr);
 
-  ShaDescription desc_good3(bytes, 1);
-  ASSERT_TRUE(desc_good3.IsValid());
-  ptr = (uint8_t*)memchr(desc_good3.desc, 0, 64);
-  ASSERT_TRUE(&desc_good3.desc[1] == ptr);
+  ASSERT_OK(ShaDescription::Create(bytes, 0, &good));
+  ptr = (uint8_t*)memchr(good.desc, 0, 64);
+  ASSERT_TRUE(&good.desc[0] == ptr);
 
-  ShaDescription desc_good4(bytes, 0);
-  ASSERT_TRUE(desc_good4.IsValid());
-  ptr = (uint8_t*)memchr(desc_good4.desc, 0, 64);
-  ASSERT_TRUE(&desc_good4.desc[0] == ptr);
-
-  ShaDescription desc_str1("");
-  ASSERT_FALSE(desc_str1.IsValid());
+  ASSERT_NOK(ShaDescription::Create("", &bad));
 
   uint8_t md2[] = {0x35, 0x6a, 0x19, 0x2b, 0x79, 0x13, 0xb0, 0x4c, 0x54, 0x57,
                    0x4d, 0x18, 0xc2, 0x8d, 0x46, 0xe6, 0x39, 0x54, 0x28, 0xab};
-  ShaDescription desc_str2("1");
-  ASSERT_TRUE(desc_str2.IsValid());
-  ASSERT_TRUE(0 == memcmp(md2, desc_str2.desc, sizeof(md2)));
-  for (size_t idx = sizeof(md2); idx < sizeof(desc_str2.desc); ++idx) {
-    ASSERT_TRUE(0 == desc_str2.desc[idx]);
+  ASSERT_OK(ShaDescription::Create("1", &good));
+  ASSERT_TRUE(0 == memcmp(md2, good.desc, sizeof(md2)));
+  for (size_t idx = sizeof(md2); idx < sizeof(good.desc); ++idx) {
+    ASSERT_TRUE(0 == good.desc[idx]);
   }
 
   uint8_t md3[] = {0x7b, 0x52, 0x00, 0x9b, 0x64, 0xfd, 0x0a, 0x2a, 0x49, 0xe6,
                    0xd8, 0xa9, 0x39, 0x75, 0x30, 0x77, 0x79, 0x2b, 0x05, 0x54};
-  ShaDescription desc_str3("12");
-  ASSERT_TRUE(desc_str3.IsValid());
-  ASSERT_TRUE(0 == memcmp(md3, desc_str3.desc, sizeof(md3)));
-  for (size_t idx = sizeof(md3); idx < sizeof(desc_str3.desc); ++idx) {
-    ASSERT_TRUE(0 == desc_str3.desc[idx]);
+  ASSERT_OK(ShaDescription::Create("12", &good));
+  ASSERT_TRUE(0 == memcmp(md3, good.desc, sizeof(md3)));
+  for (size_t idx = sizeof(md3); idx < sizeof(good.desc); ++idx) {
+    ASSERT_TRUE(0 == good.desc[idx]);
   }
 }
 
@@ -86,13 +79,10 @@ TEST(EnvOpenssl_Sha1, Copy) {
   // assignment
   uint8_t md1[] = {0xdb, 0x8a, 0xc1, 0xc2, 0x59, 0xeb, 0x89, 0xd4, 0xa1, 0x31,
                    0xb2, 0x53, 0xba, 0xcf, 0xca, 0x5f, 0x31, 0x9d, 0x54, 0xf2};
-  ShaDescription desc1("HelloWorld"), desc2;
-  ASSERT_TRUE(desc1.IsValid());
-  ASSERT_FALSE(desc2.IsValid());
-
+  ShaDescription desc1, desc2, desc3;
+  ASSERT_OK(ShaDescription::Create("HelloWorld", &desc1));
   desc2 = desc1;
-  ASSERT_TRUE(desc1.IsValid());
-  ASSERT_TRUE(desc2.IsValid());
+
   ASSERT_TRUE(0 == memcmp(md1, desc1.desc, sizeof(md1)));
   for (size_t idx = sizeof(md1); idx < sizeof(desc1.desc); ++idx) {
     ASSERT_TRUE(0 == desc1.desc[idx]);
@@ -105,12 +95,9 @@ TEST(EnvOpenssl_Sha1, Copy) {
   // copy constructor
   uint8_t md3[] = {0x17, 0x09, 0xcc, 0x51, 0x65, 0xf5, 0x50, 0x4d, 0x46, 0xde,
                    0x2f, 0x3a, 0x7a, 0xff, 0x57, 0x45, 0x20, 0x8a, 0xed, 0x44};
-  ShaDescription desc3("A little be longer title for a key");
-  ASSERT_TRUE(desc3.IsValid());
+  ASSERT_OK(ShaDescription::Create("A little be longer title for a key", &desc3));
 
   ShaDescription desc4(desc3);
-  ASSERT_TRUE(desc3.IsValid());
-  ASSERT_TRUE(desc4.IsValid());
   ASSERT_TRUE(0 == memcmp(md3, desc3.desc, sizeof(md3)));
   for (size_t idx = sizeof(md3); idx < sizeof(desc3.desc); ++idx) {
     ASSERT_TRUE(0 == desc3.desc[idx]);
@@ -126,7 +113,6 @@ class EnvOpenssl_Key {};
 TEST(EnvOpenssl_Key, Default) {
   AesCtrKey key;
 
-  ASSERT_FALSE(key.IsValid());
   for (size_t idx = 0; idx < sizeof(key.key); ++idx) {
     ASSERT_TRUE('\0' == key.key[idx]);
   }
@@ -143,32 +129,26 @@ TEST(EnvOpenssl_Key, Constructors) {
     bytes[idx] = idx + 1;
   }
 
-  AesCtrKey key_bad1(bytes, 128);
-  ASSERT_FALSE(key_bad1.IsValid());
+  ASSERT_NOK(AesCtrKey::Create(bytes, 128, &key));
+  ASSERT_NOK(AesCtrKey::Create(bytes, 65, &key));
+  ASSERT_OK(AesCtrKey::Create(bytes, 64, &key));
 
-  AesCtrKey key_bad2(bytes, 65);
-  ASSERT_FALSE(key_bad2.IsValid());
-
-  AesCtrKey key_good1(bytes, 64);
-  ASSERT_TRUE(key_good1.IsValid());
-  ptr = (uint8_t*)memchr(key_good1.key, 0, 64);
+  ptr = (uint8_t*)memchr(key.key, 0, 64);
   ASSERT_TRUE(nullptr == ptr);
 
-  AesCtrKey key_good2(bytes, 63);
-  ASSERT_TRUE(key_good2.IsValid());
-  ptr = (uint8_t*)memchr(key_good2.key, 0, 64);
-  ASSERT_TRUE(&key_good2.key[63] == ptr);
+  ASSERT_OK(AesCtrKey::Create(bytes, 63, &key));
+  ptr = (uint8_t*)memchr(key.key, 0, 64);
+  ASSERT_TRUE(&key.key[63] == ptr);
 
-  AesCtrKey key_good3(bytes, 1);
-  ASSERT_TRUE(key_good3.IsValid());
-  ptr = (uint8_t*)memchr(key_good3.key, 0, 64);
-  ASSERT_TRUE(&key_good3.key[1] == ptr);
+  ASSERT_OK(AesCtrKey::Create(bytes, 1, &key));
+  ptr = (uint8_t*)memchr(key.key, 0, 64);
+  ASSERT_TRUE(&key.key[1] == ptr);
 
-  AesCtrKey key_good4(bytes, 0);
-  ASSERT_TRUE(key_good4.IsValid());
-  ptr = (uint8_t*)memchr(key_good4.key, 0, 64);
-  ASSERT_TRUE(&key_good4.key[0] == ptr);
+  ASSERT_OK(AesCtrKey::Create(bytes, 0, &key));
+  ptr = (uint8_t*)memchr(key.key, 0, 64);
+  ASSERT_TRUE(&key.key[0] == ptr);
 
+#ifdef MJR
   AesCtrKey key_str1("");
   ASSERT_FALSE(key_str1.IsValid());
 
@@ -189,6 +169,7 @@ TEST(EnvOpenssl_Key, Constructors) {
       "0102030405060708090A0B0C0D0E0F101112131415161718191a1b1c1d1e1f20");
   ASSERT_TRUE(key_str4.IsValid());
   ASSERT_TRUE(0 == memcmp(key4, key_str4.key, sizeof(key4)));
+#endif //MJR
 }
 
 TEST(EnvOpenssl_Key, Copy) {
@@ -197,13 +178,10 @@ TEST(EnvOpenssl_Key, Copy) {
                      0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
                      0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7,
                      0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4};
-  AesCtrKey key1(data1, sizeof(data1)), key2;
-  ASSERT_TRUE(key1.IsValid());
-  ASSERT_FALSE(key2.IsValid());
+  AesCtrKey key1, key2;
+  ASSERT_OK(AesCtrKey::Create(data1, sizeof(data1), &key1));
 
   key2 = key1;
-  ASSERT_TRUE(key1.IsValid());
-  ASSERT_TRUE(key2.IsValid());
   ASSERT_TRUE(0 == memcmp(data1, key1.key, sizeof(data1)));
   ASSERT_TRUE(0 == memcmp(data1, key2.key, sizeof(data1)));
 
@@ -212,18 +190,15 @@ TEST(EnvOpenssl_Key, Copy) {
                      0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa, 0x22, 0x20,
                      0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7,
                      0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4};
-  AesCtrKey key3(data3, sizeof(data3));
-  ASSERT_TRUE(key3.IsValid());
+  AesCtrKey key3;
+  ASSERT_OK(AesCtrKey::Create(data3, sizeof(data3), &key3));
 
   AesCtrKey key4(key3);
-  ASSERT_TRUE(key3.IsValid());
-  ASSERT_TRUE(key4.IsValid());
   ASSERT_TRUE(0 == memcmp(data3, key3.key, sizeof(data3)));
   ASSERT_TRUE(0 == memcmp(data3, key4.key, sizeof(data3)));
 }
 
 class EnvOpenssl_Provider {};
-
 TEST(EnvOpenssl_Provider, NistExamples) {
   uint8_t key[] = {0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe,
                    0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
@@ -252,10 +227,11 @@ TEST(EnvOpenssl_Provider, NistExamples) {
   uint8_t cypher4[] = {0xdf, 0xc9, 0xc5, 0x8d, 0xb6, 0x7a, 0xad, 0xa6,
                        0x13, 0xc2, 0xdd, 0x08, 0x45, 0x79, 0x41, 0xa6};
 
-  CTREncryptionProviderV2 provider("NistExampleKey", key, sizeof(key));
-
-  std::unique_ptr<BlockAccessCipherStream> stream(
-      provider.CreateCipherStream2(1, init));
+  std::unique_ptr<BlockAccessCipherStream> stream;
+  AesCtrKey aes_key;
+  
+  ASSERT_OK(AesCtrKey::Create(key, sizeof(key), &aes_key));
+  ASSERT_OK(AESBlockAccessCipherStream::CreateCipherStream(aes_key, init, &stream));
 
   uint64_t offset;
   uint8_t block[sizeof(plain1)];
@@ -315,7 +291,7 @@ TEST(EnvOpenssl_Provider, NistExamples) {
   status = stream->Decrypt(offset, (char*)block, sizeof(block));
   ASSERT_TRUE(0 == memcmp(plain4, block, sizeof(block)));
 }
-
+  
 TEST(EnvOpenssl_Provider, NistSingleCall) {
   uint8_t key[] = {0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe,
                    0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
@@ -342,7 +318,8 @@ TEST(EnvOpenssl_Provider, NistSingleCall) {
 
   AesCtrKey aes_key(key, sizeof(key));
   uint8_t output[sizeof(plain1)];
-  AESBlockAccessCipherStream stream(aes_key, 0, init);
+  std::unique_ptr<BlockAccessCipherStream> stream;
+  ASSERT_OK(AESBlockAccessCipherStream::CreateCipherStream(aes_key, init, &stream));
   uint64_t offset;
 
   //
@@ -352,7 +329,7 @@ TEST(EnvOpenssl_Provider, NistSingleCall) {
   // memcpy((void*)&offset, (void*)&init[8], 8);
   offset = 0;
 
-  Status status = stream.Encrypt(offset, (char*)output, sizeof(plain1));
+  Status status = stream->Encrypt(offset, (char*)output, sizeof(plain1));
   ASSERT_TRUE(status.ok());
   ASSERT_TRUE(0 == memcmp(cypher1, output, sizeof(output)));
 }
@@ -449,28 +426,15 @@ class EnvBasicTestWithParam : public testing::Test,
 
 class EnvMoreTestWithParam : public EnvBasicTestWithParam {};
 
-// next statements run env test against encrypt_2 code.
-static std::string KeyName = {"A key name"};
-static ShaDescription KeyDesc(KeyName);
-
-// this key is from
-// https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf,
-//  example F.5.5
-static uint8_t key256[] = {0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe,
-                           0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
-                           0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7,
-                           0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4};
-std::shared_ptr<const CTREncryptionProviderV2> openssl_provider_ctr(
-    new CTREncryptionProviderV2(KeyName, key256, 32));
-
-static OpenSSLEnv::ReadKeys encrypt_readers = {{KeyDesc, openssl_provider_ctr}};
-static OpenSSLEnv::WriteKey encrypt_writer = {KeyDesc, openssl_provider_ctr};
-
-static std::unique_ptr<Env> openssl_env(new NormalizingEnvWrapper(
-    OpenSSLEnv::Default(encrypt_readers, encrypt_writer)));
+static std::shared_ptr<EncryptionProvider> openssl_provider_ctr;
+static Status unused = EncryptionProvider::CreateFromString(ConfigOptions(),
+                                                            "test://SSL-AES-CTR",
+                                                            &openssl_provider_ctr);
+static std::unique_ptr<Env> openssl_env (NewEncryptedEnv(Env::Default(), openssl_provider_ctr));
+static std::unique_ptr<Env> encrypt_env(new NormalizingEnvWrapper(openssl_env.get()));
 
 INSTANTIATE_TEST_CASE_P(OpenSSLEnv, EnvBasicTestWithParam,
-                        ::testing::Values(openssl_env.get()));
+                        ::testing::Values(encrypt_env.get()));
 
 TEST_P(EnvBasicTestWithParam, Basics) {
   uint64_t file_size;

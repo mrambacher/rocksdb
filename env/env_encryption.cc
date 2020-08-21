@@ -13,6 +13,7 @@
 #include <iostream>
 
 #include "env/env_encryption_ctr.h"
+#include "env/env_openssl_impl.h"
 #include "monitoring/perf_context_imp.h"
 #include "rocksdb/convenience.h"
 #include "util/aligned_buffer.h"
@@ -50,7 +51,7 @@ Status BlockCipher::CreateFromString(const ConfigOptions& /*config_options*/,
 }
 
 Status EncryptionProvider::CreateFromString(
-    const ConfigOptions& /*config_options*/, const std::string& value,
+    const ConfigOptions& config_options, const std::string& value,
     std::shared_ptr<EncryptionProvider>* result) {
   std::string id = value;
   bool is_test = StartsWith(value, "test://");
@@ -60,6 +61,8 @@ Status EncryptionProvider::CreateFromString(
   }
   if (id == kCTRProviderName) {
     result->reset(new CTREncryptionProvider());
+  } else if (id == "SSL-AES-CTR") {
+    status = CreateSslAesCtrProvider(config_options, value, result);
   } else if (is_test) {
     result->reset(new CTREncryptionProvider());
   } else {
