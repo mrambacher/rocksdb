@@ -77,6 +77,7 @@ LIB_SOURCES =                                                   \
   env/env_chroot.cc                                             \
   env/env_encryption.cc                                         \
   env/env_hdfs.cc                                               \
+  env/env_openssl.cc                                            \
   env/env_posix.cc                                              \
   env/file_system.cc                                            \
   env/fs_posix.cc                                               \
@@ -191,6 +192,7 @@ LIB_SOURCES =                                                   \
   util/crc32c.cc                                                \
   util/dynamic_bloom.cc                                         \
   util/hash.cc                                                  \
+  util/library_loader.cc                                        \
   util/murmurhash.cc                                            \
   util/random.cc                                                \
   util/rate_limiter.cc                                          \
@@ -418,6 +420,7 @@ TEST_MAIN_SOURCES =                                                     \
   db/write_callback_test.cc                                             \
   db/write_controller_test.cc                                           \
   env/env_basic_test.cc                                                 \
+  env/env_openssl_test.cc                                               \
   env/env_test.cc                                                       \
   env/io_posix_test.cc                                                  \
   env/mock_env_test.cc                                                  \
@@ -469,6 +472,7 @@ TEST_MAIN_SOURCES =                                                     \
   util/file_reader_writer_test.cc                                       \
   util/hash_test.cc                                                     \
   util/heap_test.cc                                                     \
+  util/library_loader_test.cc                                           \
   util/random_test.cc                                                   \
   util/rate_limiter_test.cc                                             \
   util/repeatable_thread_test.cc                                        \
