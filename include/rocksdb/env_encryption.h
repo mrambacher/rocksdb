@@ -142,7 +142,7 @@ class EncryptionProvider {
                                  size_t prefixLength) const = 0;
 
   // Method to add a new cipher key for use by the EncryptionProvider.
-  // @param description  Descriptor for this key.  
+  // @param description  Descriptor for this key.
   // @param cipher       The cryptographic key to use
   // @param len          The length of the cipher key
   // @param for_write If true, this cipher should be used for writing files.
