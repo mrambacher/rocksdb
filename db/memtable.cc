@@ -377,13 +377,14 @@ class MemTableIterator : public InternalIterator {
     iter_->Next();
     valid_ = iter_->Valid();
   }
-  bool NextAndGetResult(IterateResult* result) override {
+  bool NextAndGetResult(IterateResult<Slice>* result) override {
     Next();
     bool is_valid = valid_;
     if (is_valid) {
       result->key = key();
       result->bound_check_result = IterBoundCheck::kUnknown;
       result->value_prepared = true;
+      result->value = value();
     }
     return is_valid;
   }

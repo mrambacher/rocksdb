@@ -48,7 +48,7 @@ class BlockBasedTableIterator : public InternalIteratorBase<Slice> {
   void SeekToFirst() override;
   void SeekToLast() override;
   void Next() final override;
-  bool NextAndGetResult(IterateResult* result) override;
+  bool NextAndGetResult(IterateResult<Slice>* result) override;
   void Prev() override;
   bool Valid() const override {
     return !is_out_of_bound_ &&

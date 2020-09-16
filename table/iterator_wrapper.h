@@ -63,7 +63,7 @@ class IteratorWrapperBase {
   }
   TValue value() const {
     assert(Valid());
-    return iter_->value();
+    return result_.value;
   }
   // Methods below require iter() != nullptr
   Status status() const {
@@ -77,6 +77,7 @@ class IteratorWrapperBase {
     }
     if (iter_->PrepareValue()) {
       result_.value_prepared = true;
+      result_.value = iter_->value();
       return true;
     }
 
@@ -89,7 +90,7 @@ class IteratorWrapperBase {
     valid_ = iter_->NextAndGetResult(&result_);
     assert(!valid_ || iter_->status().ok());
   }
-  bool NextAndGetResult(IterateResult* result) {
+  bool NextAndGetResult(IterateResult<TValue>* result) {
     assert(iter_);
     valid_ = iter_->NextAndGetResult(&result_);
     *result = result_;
@@ -161,7 +162,7 @@ class IteratorWrapperBase {
   }
 
   InternalIteratorBase<TValue>* iter_;
-  IterateResult result_;
+  IterateResult<TValue> result_;
   bool valid_;
 };
 

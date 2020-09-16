@@ -310,7 +310,7 @@ class BlockIter : public InternalIteratorBase<TValue> {
     UpdateKey();
   }
 
-  virtual bool NextAndGetResult(IterateResult* result) override final {
+  virtual bool NextAndGetResult(IterateResult<TValue>* result) override final {
     // This does not need to call `UpdateKey()` as the parent class only has
     // access to the `UpdateKey()`-invoking functions.
     return InternalIteratorBase<TValue>::NextAndGetResult(result);

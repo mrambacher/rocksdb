@@ -48,7 +48,7 @@ class ParititionedIndexIterator : public InternalIteratorBase<IndexValue> {
   void SeekToFirst() override;
   void SeekToLast() override;
   void Next() final override;
-  bool NextAndGetResult(IterateResult*) override {
+  bool NextAndGetResult(IterateResult<IndexValue>*) override {
     assert(false);
     return false;
   }

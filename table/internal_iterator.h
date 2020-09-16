@@ -23,11 +23,13 @@ enum class IterBoundCheck : char {
   kInbound,
 };
 
+template <class TValue>
 struct IterateResult {
   Slice key;
   IterBoundCheck bound_check_result = IterBoundCheck::kUnknown;
   // If false, PrepareValue() needs to be called before value().
   bool value_prepared = true;
+  TValue value;
 };
 
 template <class TValue>
@@ -77,7 +79,7 @@ class InternalIteratorBase : public Cleanable {
   // implementation should override this method to help methods inline better,
   // or when UpperBoundCheckResult() is non-trivial.
   // REQUIRES: Valid()
-  virtual bool NextAndGetResult(IterateResult* result) {
+  virtual bool NextAndGetResult(IterateResult<TValue>* result) {
     Next();
     bool is_valid = Valid();
     if (is_valid) {

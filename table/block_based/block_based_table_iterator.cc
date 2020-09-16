@@ -184,13 +184,16 @@ void BlockBasedTableIterator::Next() {
   CheckOutOfBound();
 }
 
-bool BlockBasedTableIterator::NextAndGetResult(IterateResult* result) {
+bool BlockBasedTableIterator::NextAndGetResult(IterateResult<Slice>* result) {
   Next();
   bool is_valid = Valid();
   if (is_valid) {
     result->key = key();
     result->bound_check_result = UpperBoundCheckResult();
     result->value_prepared = !is_at_first_key_from_index_;
+    if (result->value_prepared) {
+      result->value = value();
+    }
   }
   return is_valid;
 }

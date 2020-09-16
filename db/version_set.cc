@@ -915,7 +915,7 @@ class LevelIterator final : public InternalIterator {
   void SeekToFirst() override;
   void SeekToLast() override;
   void Next() final override;
-  bool NextAndGetResult(IterateResult* result) override;
+  bool NextAndGetResult(IterateResult<Slice>* result) override;
   void Prev() override;
 
   bool Valid() const override { return file_iter_.Valid(); }
@@ -1143,7 +1143,7 @@ void LevelIterator::Next() {
   SkipEmptyFileForward();
 }
 
-bool LevelIterator::NextAndGetResult(IterateResult* result) {
+bool LevelIterator::NextAndGetResult(IterateResult<Slice>* result) {
   assert(Valid());
   bool is_valid = file_iter_.NextAndGetResult(result);
   if (!is_valid) {
@@ -1153,9 +1153,12 @@ bool LevelIterator::NextAndGetResult(IterateResult* result) {
       result->key = key();
       result->bound_check_result = file_iter_.UpperBoundCheckResult();
       // Ideally, we should return the real file_iter_.value_prepared but the
-      // information is not here. It would casue an extra PrepareValue()
+      // information is not here. It would cause an extra PrepareValue()
       // for the first key of a file.
       result->value_prepared = !allow_unprepared_value_;
+      if (result->value_prepared) {
+        result->value = value();
+      }
     }
   }
   return is_valid;
