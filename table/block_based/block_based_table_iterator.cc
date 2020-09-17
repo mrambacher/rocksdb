@@ -190,8 +190,10 @@ bool BlockBasedTableIterator::NextAndGetResult(IterateResult<Slice>* result) {
   if (is_valid) {
     result->key = key();
     result->bound_check_result = UpperBoundCheckResult();
-    result->value_prepared = true; // !is_at_first_key_from_index_;
-    result->value = value();
+    result->value_prepared = !is_at_first_key_from_index_;
+    if (result->value_prepared) {
+      result->value = value();
+    }
   }
   return is_valid;
 }

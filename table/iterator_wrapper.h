@@ -63,8 +63,14 @@ class IteratorWrapperBase {
   }
   TValue value() const {
     assert(Valid());
+    if (!result_.value_prepared) {
+      result_.value_prepared = iter_->PrepareValue();
+      assert(result_.value_prepared);
+      result_.value = iter_->value();
+    }
     return result_.value;
   }
+
   // Methods below require iter() != nullptr
   Status status() const {
     assert(iter_);
@@ -156,14 +162,13 @@ class IteratorWrapperBase {
     if (valid_) {
       assert(iter_->status().ok());
       result_.key = iter_->key();
+      result_.value_prepared = false;
       result_.bound_check_result = IterBoundCheck::kUnknown;
-      result_.value_prepared = true;
-      result_.value = iter_->value();
     }
   }
 
   InternalIteratorBase<TValue>* iter_;
-  IterateResult<TValue> result_;
+  mutable IterateResult<TValue> result_;
   bool valid_;
 };
 

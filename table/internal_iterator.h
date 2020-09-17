@@ -88,8 +88,7 @@ class InternalIteratorBase : public Cleanable {
       // call. If an implementation has non-trivial UpperBoundCheckResult(),
       // it should also override NextAndGetResult().
       result->bound_check_result = IterBoundCheck::kUnknown;
-      result->value_prepared = true;
-      result->value = value();
+      result->value_prepared = false;
       assert(UpperBoundCheckResult() != IterBoundCheck::kOutOfBound);
     }
     return is_valid;

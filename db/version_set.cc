@@ -1155,8 +1155,10 @@ bool LevelIterator::NextAndGetResult(IterateResult<Slice>* result) {
       // Ideally, we should return the real file_iter_.value_prepared but the
       // information is not here. It would cause an extra PrepareValue()
       // for the first key of a file.
-      result->value_prepared = true; // !allow_unprepared_value_;
-      result->value = value();
+      result->value_prepared = !allow_unprepared_value_;
+      if (result->value_prepared) {
+        result->value = value();
+      }
     }
   }
   return is_valid;
