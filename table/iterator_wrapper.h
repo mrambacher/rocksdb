@@ -157,7 +157,8 @@ class IteratorWrapperBase {
       assert(iter_->status().ok());
       result_.key = iter_->key();
       result_.bound_check_result = IterBoundCheck::kUnknown;
-      result_.value_prepared = false;
+      result_.value_prepared = true;
+      result_.value = iter_->value();
     }
   }
 

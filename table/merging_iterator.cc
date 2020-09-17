@@ -196,10 +196,8 @@ class MergingIterator : public InternalIterator {
     if (is_valid) {
       result->key = key();
       result->bound_check_result = UpperBoundCheckResult();
-      result->value_prepared = current_->IsValuePrepared();
-      if (result->value_prepared) {
-        result->value = value();
-      }
+      result->value_prepared = true; // current_->IsValuePrepared();
+      result->value = value();
     }
     return is_valid;
   }
