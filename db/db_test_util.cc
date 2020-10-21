@@ -13,6 +13,8 @@
 #include "rocksdb/convenience.h"
 #include "rocksdb/env_encryption.h"
 #include "rocksdb/utilities/object_registry.h"
+#include "table/block_based/block_based_table_factory.h"
+#include "table/plain/plain_table_factory.h"
 #include "util/random.h"
 
 namespace ROCKSDB_NAMESPACE {

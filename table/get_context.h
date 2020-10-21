@@ -11,7 +11,6 @@
 #include "rocksdb/env.h"
 #include "rocksdb/statistics.h"
 #include "rocksdb/types.h"
-#include "table/block_based/block.h"
 
 namespace ROCKSDB_NAMESPACE {
 class MergeContext;

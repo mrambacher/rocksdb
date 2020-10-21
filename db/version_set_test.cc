@@ -11,6 +11,8 @@
 
 #include "db/db_impl/db_impl.h"
 #include "db/log_writer.h"
+#include "env/mock_env.h"
+#include "logging/logging.h"
 #include "table/block_based/block_based_table_factory.h"
 #include "table/mock_table.h"
 #include "test_util/testharness.h"

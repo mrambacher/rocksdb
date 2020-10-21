@@ -17,6 +17,7 @@
 #include "port/stack_trace.h"
 #include "rocksdb/persistent_cache.h"
 #include "rocksdb/wal_filter.h"
+#include "table/block_based/block_based_table_factory.h"
 #include "util/random.h"
 #include "utilities/fault_injection_env.h"
 

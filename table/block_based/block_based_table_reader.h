@@ -11,6 +11,7 @@
 
 #include "db/range_tombstone_fragmenter.h"
 #include "file/filename.h"
+#include "table/block_based/block.h"
 #include "table/block_based/block_based_table_factory.h"
 #include "table/block_based/block_type.h"
 #include "table/block_based/cachable_entry.h"
@@ -19,7 +20,6 @@
 #include "table/table_properties_internal.h"
 #include "table/table_reader.h"
 #include "table/two_level_iterator.h"
-
 #include "trace_replay/block_cache_tracer.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -39,8 +39,6 @@ struct BlockBasedTableOptions;
 struct EnvOptions;
 struct ReadOptions;
 class GetContext;
-
-typedef std::vector<std::pair<std::string, std::string>> KVPairBlock;
 
 // Reader class for BlockBasedTable format.
 // For the format of BlockBasedTable refer to
@@ -137,11 +135,6 @@ class BlockBasedTable : public TableReader {
                 const SliceTransform* prefix_extractor,
                 bool skip_filters = false) override;
 
-  // Pre-fetch the disk blocks that correspond to the key range specified by
-  // (kbegin, kend). The call will return error status in the event of
-  // IO or iteration error.
-  Status Prefetch(const Slice* begin, const Slice* end) override;
-
   // Given a key, return an approximate byte offset in the file where
   // the data for that key begins (or would begin if the key were
   // present in the file). The returned value is in terms of file
@@ -217,29 +210,29 @@ class BlockBasedTable : public TableReader {
   static Slice GetCacheKey(const char* cache_key_prefix,
                            size_t cache_key_prefix_size,
                            const BlockHandle& handle, char* cache_key);
-
-  // Retrieve all key value pairs from data blocks in the table.
-  // The key retrieved are internal keys.
-  Status GetKVPairsFromDataBlocks(std::vector<KVPairBlock>* kv_pair_blocks);
-
   struct Rep;
 
   Rep* get_rep() { return rep_; }
   const Rep* get_rep() const { return rep_; }
+  IndexBlockIter* NewIndexBlockIterator(const ReadOptions& ro,
+                                        const BlockHandle& block_handle,
+                                        IndexBlockIter* input_iter,
+                                        BlockCacheLookupContext* lookup_context,
+                                        FilePrefetchBuffer* prefetch_buffer,
+                                        bool for_compaction = false) const;
 
   // input_iter: if it is not null, update this one and return it as Iterator
-  template <typename TBlockIter>
-  TBlockIter* NewDataBlockIterator(
+  DataBlockIter* NewDataBlockIterator(
       const ReadOptions& ro, const BlockHandle& block_handle,
-      TBlockIter* input_iter, BlockType block_type, GetContext* get_context,
-      BlockCacheLookupContext* lookup_context, Status s,
+      DataBlockIter* input_iter, BlockType block_type, GetContext* get_context,
+      BlockCacheLookupContext* lookup_context,
       FilePrefetchBuffer* prefetch_buffer, bool for_compaction = false) const;
 
   // input_iter: if it is not null, update this one and return it as Iterator
-  template <typename TBlockIter>
-  TBlockIter* NewDataBlockIterator(const ReadOptions& ro,
-                                   CachableEntry<Block>& block,
-                                   TBlockIter* input_iter, Status s) const;
+  DataBlockIter* NewDataBlockIterator(const ReadOptions& ro,
+                                      CachableEntry<DataBlock>& block,
+                                      DataBlockIter* input_iter,
+                                      Status s) const;
 
   class PartitionedIndexIteratorState;
 
@@ -264,6 +257,9 @@ class BlockBasedTable : public TableReader {
   static std::atomic<uint64_t> next_cache_key_id_;
   BlockCacheTracer* const block_cache_tracer_;
 
+  template <typename TBlock, typename TBlockIter>
+  void UpdateBlockCache(const ReadOptions& ro, CachableEntry<TBlock>& block,
+                        TBlockIter* input_iter) const;
   void UpdateCacheHitMetrics(BlockType block_type, GetContext* get_context,
                              size_t usage) const;
   void UpdateCacheMissMetrics(BlockType block_type,
@@ -274,13 +270,6 @@ class BlockBasedTable : public TableReader {
   Cache::Handle* GetEntryFromCache(Cache* block_cache, const Slice& key,
                                    BlockType block_type,
                                    GetContext* get_context) const;
-
-  // Either Block::NewDataIterator() or Block::NewIndexIterator().
-  template <typename TBlockIter>
-  static TBlockIter* InitBlockIterator(const Rep* rep, Block* block,
-                                       BlockType block_type,
-                                       TBlockIter* input_iter,
-                                       bool block_contents_pinned);
 
   // If block cache enabled (compressed or uncompressed), looks for the block
   // identified by handle in (1) uncompressed cache, (2) compressed cache, and
@@ -311,11 +300,17 @@ class BlockBasedTable : public TableReader {
                        BlockCacheLookupContext* lookup_context,
                        bool for_compaction, bool use_cache) const;
 
+  Status RetrieveDataBlock(FilePrefetchBuffer* prefetch_buffer,
+                           const ReadOptions& ro, const BlockHandle& handle,
+                           CachableEntry<DataBlock>* block,
+                           BlockType block_type, GetContext* get_context,
+                           BlockCacheLookupContext* lookup_context,
+                           bool for_compaction, bool use_cache = true) const;
   void RetrieveMultipleBlocks(
       const ReadOptions& options, const MultiGetRange* batch,
       const autovector<BlockHandle, MultiGetContext::MAX_BATCH_SIZE>* handles,
       autovector<Status, MultiGetContext::MAX_BATCH_SIZE>* statuses,
-      autovector<CachableEntry<Block>, MultiGetContext::MAX_BATCH_SIZE>*
+      autovector<CachableEntry<DataBlock>, MultiGetContext::MAX_BATCH_SIZE>*
           results,
       char* scratch, const UncompressionDict& uncompression_dict) const;
 
@@ -412,7 +407,7 @@ class BlockBasedTable : public TableReader {
       std::unique_ptr<FilePrefetchBuffer>* prefetch_buffer);
   Status ReadMetaIndexBlock(const ReadOptions& ro,
                             FilePrefetchBuffer* prefetch_buffer,
-                            std::unique_ptr<Block>* metaindex_block,
+                            std::unique_ptr<MetaBlock>* metaindex_block,
                             std::unique_ptr<InternalIterator>* iter);
   Status TryReadPropertiesWithGlobalSeqno(const ReadOptions& ro,
                                           FilePrefetchBuffer* prefetch_buffer,
@@ -492,14 +487,14 @@ class BlockBasedTable::PartitionedIndexIteratorState
  public:
   PartitionedIndexIteratorState(
       const BlockBasedTable* table,
-      std::unordered_map<uint64_t, CachableEntry<Block>>* block_map);
+      std::unordered_map<uint64_t, CachableEntry<IndexBlock>>* block_map);
   InternalIteratorBase<IndexValue>* NewSecondaryIterator(
       const BlockHandle& index_value) override;
 
  private:
   // Don't own table_
   const BlockBasedTable* table_;
-  std::unordered_map<uint64_t, CachableEntry<Block>>* block_map_;
+  std::unordered_map<uint64_t, CachableEntry<IndexBlock>>* block_map_;
 };
 
 // Stores all the properties associated with a BlockBasedTable.

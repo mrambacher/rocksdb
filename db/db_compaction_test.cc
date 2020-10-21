@@ -14,6 +14,7 @@
 #include "rocksdb/experimental.h"
 #include "rocksdb/sst_file_writer.h"
 #include "rocksdb/utilities/convenience.h"
+#include "table/block_based/block_based_table_factory.h"
 #include "test_util/sync_point.h"
 #include "util/concurrent_task_limiter_impl.h"
 #include "util/random.h"

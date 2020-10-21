@@ -123,6 +123,8 @@ class TableReader {
   // Prefetch data corresponding to a give range of keys
   // Typically this functionality is required for table implementations that
   // persists the data on a non volatile storage medium like disk/SSD
+  //
+  // This method is currently unused and deprecated.
   virtual Status Prefetch(const Slice* begin = nullptr,
                           const Slice* end = nullptr) {
     (void) begin;
@@ -131,7 +133,6 @@ class TableReader {
     // The child class should implement functionality when applicable
     return Status::OK();
   }
-
   // convert db file to a human readable form
   virtual Status DumpTable(WritableFile* /*out_file*/) {
     return Status::NotSupported("DumpTable() not supported");

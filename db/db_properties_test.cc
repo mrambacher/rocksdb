@@ -19,6 +19,7 @@
 #include "rocksdb/perf_context.h"
 #include "rocksdb/perf_level.h"
 #include "rocksdb/table.h"
+#include "table/block_based/block_based_table_factory.h"
 #include "util/random.h"
 #include "util/string_util.h"
 
