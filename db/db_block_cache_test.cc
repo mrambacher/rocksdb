@@ -993,7 +993,7 @@ TEST_P(DBBlockCachePinningTest, TwoLevelDB) {
     }
   }
   if (unpartitioned_pinning_ == PinningTier::kNone) {
-    ++expected_compression_dict_misses;
+    //++expected_compression_dict_misses;
   }
   ASSERT_EQ(expected_filter_misses,
             TestGetTickerCount(options, BLOCK_CACHE_FILTER_MISS));
@@ -1028,7 +1028,7 @@ TEST_P(DBBlockCachePinningTest, TwoLevelDB) {
   }
   if (unpartitioned_pinning_ == PinningTier::kNone ||
       unpartitioned_pinning_ == PinningTier::kFlushedAndSimilar) {
-    ++expected_compression_dict_misses;
+    // ++expected_compression_dict_misses;
   }
   ASSERT_EQ(expected_filter_misses,
             TestGetTickerCount(options, BLOCK_CACHE_FILTER_MISS));

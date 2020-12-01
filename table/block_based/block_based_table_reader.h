@@ -422,6 +422,8 @@ class BlockBasedTable : public TableReader {
                            InternalIterator* meta_iter,
                            const InternalKeyComparator& internal_comparator,
                            BlockCacheLookupContext* lookup_context);
+  const UncompressionDict& GetUncompressionDict(GetContext* get_context) const;
+  
   Status PrefetchIndexAndFilterBlocks(
       const ReadOptions& ro, FilePrefetchBuffer* prefetch_buffer,
       InternalIterator* meta_iter, BlockBasedTable* new_table,
@@ -539,7 +541,7 @@ struct BlockBasedTable::Rep {
 
   std::unique_ptr<IndexReader> index_reader;
   std::unique_ptr<FilterBlockReader> filter;
-  std::unique_ptr<UncompressionDictReader> uncompression_dict_reader;
+  std::unique_ptr<UncompressionDict> uncompression_dict;
 
   enum class FilterType {
     kNoFilter,
@@ -549,7 +551,6 @@ struct BlockBasedTable::Rep {
   };
   FilterType filter_type;
   BlockHandle filter_handle;
-  BlockHandle compression_dict_handle;
 
   std::shared_ptr<const TableProperties> table_properties;
   BlockBasedTableOptions::IndexType index_type;
