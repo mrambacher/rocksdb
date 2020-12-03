@@ -26,8 +26,30 @@
 #include "table/format.h"
 #include "util/coding.h"
 
-namespace ROCKSDB_NAMESPACE {
+#include <atomic>
 
+namespace ROCKSDB_NAMESPACE {
+class LocalTimers {
+  public:
+  std::atomic<unsigned long> decode_calls;
+  std::atomic<unsigned long> blocks_created;
+  std::atomic<uint64_t> decode_time;
+  LocalTimers()
+    : decode_calls(0),
+      blocks_created(0),
+      decode_time(0) {
+  }
+  ~LocalTimers() {
+    unsigned long created = blocks_created;
+    unsigned long calls = decode_calls;
+    unsigned long cputime = decode_time;
+    printf("MJR: ***Blocks created=%ld\n", created);
+    printf("MJR: ***Decode calls=%ld\n", calls);
+    printf("MJR: ***Decode time=%ld\n", cputime);
+  }    
+};
+
+static std::unique_ptr<LocalTimers> mjr(new LocalTimers());
 // Helper routine: decode the next block entry starting at "p",
 // storing the number of shared key bytes, non_shared key bytes,
 // and the length of the value in "*shared", "*non_shared", and
@@ -40,6 +62,8 @@ const char* DecodeEntry(const char* p, const char* limit, uint32_t* shared,
   // We need 2 bytes for shared and non_shared size. We also need one more
   // byte either for value size or the actual value in case of value delta
   // encoding.
+  auto start = Env::Default()->NowNanos();
+  mjr->decode_calls++;
   assert(limit - p >= 3);
   *shared = reinterpret_cast<const unsigned char*>(p)[0];
   *non_shared = reinterpret_cast<const unsigned char*>(p)[1];
@@ -58,6 +82,7 @@ const char* DecodeEntry(const char* p, const char* limit, uint32_t* shared,
   // Using an assert in place of "return null" since we should not pay the
   // cost of checking for corruption on every single key decoding
   assert(!(static_cast<uint32_t>(limit - p) < (*non_shared + *value_length)));
+  mjr->decode_time += (Env::Default()->NowNanos() - start);
   return p;
 }
 
@@ -865,6 +890,7 @@ DataBlock::DataBlock(BlockContents&& contents, size_t read_amp_bytes_per_bit,
     : Block(std::move(contents)),
       index_type_(BlockBasedTableOptions::kDataBlockBinarySearch) {
   TEST_SYNC_POINT("Block::Block:0");
+  mjr->blocks_created++;
   if (size_ > 0) {
     const char* end = data_ + size_;
     // Should only decode restart points for uncompressed blocks
