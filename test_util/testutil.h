@@ -53,9 +53,10 @@ class ErrorEnv : public EnvWrapper {
   bool writable_file_error_;
   int num_writable_file_errors_;
 
-  ErrorEnv() : EnvWrapper(Env::Default()),
-               writable_file_error_(false),
-               num_writable_file_errors_(0) { }
+  ErrorEnv(Env* _target)
+      : EnvWrapper(_target),
+        writable_file_error_(false),
+        num_writable_file_errors_(0) {}
 
   virtual Status NewWritableFile(const std::string& fname,
                                  std::unique_ptr<WritableFile>* result,
@@ -805,6 +806,12 @@ void ResetTmpDirForDirectIO();
 Status CorruptFile(Env* env, const std::string& fname, int offset,
                    int bytes_to_corrupt, bool verify_checksum = true);
 Status TruncateFile(Env* env, const std::string& fname, uint64_t length);
+
+// Try and delete a directory if it exists
+Status TryDeleteDir(Env* env, const std::string& dirname);
+
+// Delete a directory if it exists
+void DeleteDir(Env* env, const std::string& dirname);
 
 }  // namespace test
 }  // namespace ROCKSDB_NAMESPACE
