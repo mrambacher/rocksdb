@@ -1233,7 +1233,7 @@ TEST_F(VersionSetTest, WalEditsNotAppliedToVersion) {
       [&](void* arg) { versions.push_back(reinterpret_cast<Version*>(arg)); });
   SyncPoint::GetInstance()->EnableProcessing();
 
-  LogAndApplyToDefaultCF(edits);
+  ASSERT_OK(LogAndApplyToDefaultCF(edits));
 
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->ClearAllCallBacks();
@@ -1269,7 +1269,7 @@ TEST_F(VersionSetTest, NonWalEditsAppliedToVersion) {
       [&](void* arg) { versions.push_back(reinterpret_cast<Version*>(arg)); });
   SyncPoint::GetInstance()->EnableProcessing();
 
-  LogAndApplyToDefaultCF(edits);
+  ASSERT_OK(LogAndApplyToDefaultCF(edits));
 
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->ClearAllCallBacks();
@@ -1676,7 +1676,7 @@ TEST_F(VersionSetTest, AtomicGroupWithWalEdits) {
   edits.back()->MarkAtomicGroup(--remaining);
   ASSERT_EQ(remaining, 0);
 
-  Status s = LogAndApplyToDefaultCF(edits);
+  ASSERT_OK(LogAndApplyToDefaultCF(edits));
 
   // Recover a new VersionSet, the min log number and the last WAL should be
   // kept.
@@ -2294,10 +2294,7 @@ TEST_P(VersionSetTestDropOneCF, HandleDroppedColumnFamilyInAtomicGroup) {
   mutex_.Unlock();
   ASSERT_OK(s);
   ASSERT_EQ(1, called);
-  if (cfd_to_drop->Unref()) {
-    delete cfd_to_drop;
-    cfd_to_drop = nullptr;
-  }
+  cfd_to_drop->UnrefAndTryDelete();
 }
 
 INSTANTIATE_TEST_CASE_P(
