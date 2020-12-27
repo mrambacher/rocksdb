@@ -288,6 +288,20 @@ class BlockBasedTable : public TableReader {
       GetContext* get_context, BlockCacheLookupContext* lookup_context,
       BlockContents* contents) const;
 
+  // Read the block identified by "handle" from "file".
+  // The only relevant option is options.verify_checksums for now.
+  // On failure return non-OK.
+  // On success fill *result and return OK - caller owns *result
+  // @param uncompression_dict Data for presetting the compression library's
+  //    dictionary.
+  template <typename TBlocklike>
+  Status ReadBlockFromFile(FilePrefetchBuffer* prefetch_buffer,
+                           const ReadOptions& ro, const BlockHandle& handle,
+                           bool do_uncompress, bool maybe_compressed,
+                           BlockType block_type,
+                           const UncompressionDict& uncompression_dict,
+                           bool for_compaction,
+                           std::unique_ptr<TBlocklike>* result) const;
   // Similar to the above, with one crucial difference: it will retrieve the
   // block from the file even if there are no caches configured (assuming the
   // read options allow I/O).
@@ -305,7 +319,9 @@ class BlockBasedTable : public TableReader {
                            CachableEntry<DataBlock>* block,
                            BlockType block_type, GetContext* get_context,
                            BlockCacheLookupContext* lookup_context,
-                           bool for_compaction, bool use_cache = true) const;
+                           bool for_compaction,
+                           const UncompressionDict& uncompression_dict,
+                           bool use_cache = true) const;
   void RetrieveMultipleBlocks(
       const ReadOptions& options, const MultiGetRange* batch,
       const autovector<BlockHandle, MultiGetContext::MAX_BATCH_SIZE>* handles,

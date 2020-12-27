@@ -86,11 +86,8 @@ class BlocklikeTraits;
 template <>
 class BlocklikeTraits<BlockContents> {
  public:
-  static BlockContents* Create(
-      BlockContents&& contents, const ImmutableCFOptions& /*ioptions*/,
-      const BlockBasedTableOptions& /*bbtopts*/,
-      const std::shared_ptr<const TableProperties>& /*props*/,
-      bool /* using_zstd */) {
+  static BlockContents* Create(BlockContents&& contents,
+                               const BlockBasedTable* /*table*/) {
     return new BlockContents(std::move(contents));
   }
 
@@ -102,12 +99,10 @@ class BlocklikeTraits<BlockContents> {
 template <>
 class BlocklikeTraits<ParsedFullFilterBlock> {
  public:
-  static ParsedFullFilterBlock* Create(
-      BlockContents&& contents, const ImmutableCFOptions& /*ioptions*/,
-      const BlockBasedTableOptions& bbtopts,
-      const std::shared_ptr<const TableProperties>& /*props*/,
-      bool /* using_zstd */) {
-    return new ParsedFullFilterBlock(bbtopts.filter_policy.get(),
+  static ParsedFullFilterBlock* Create(BlockContents&& contents,
+                                       const BlockBasedTable* table) {
+    const auto rep = table->get_rep();
+    return new ParsedFullFilterBlock(rep->table_options.filter_policy.get(),
                                      std::move(contents));
   }
 
@@ -118,18 +113,17 @@ class BlocklikeTraits<ParsedFullFilterBlock> {
 template <>
 class BlocklikeTraits<DataBlock> {
  public:
-  static DataBlock* Create(
-      BlockContents&& contents, const ImmutableCFOptions& ioptions,
-      const BlockBasedTableOptions& bbtopts,
-      const std::shared_ptr<const TableProperties>& /*props*/,
-      bool /* using_zstd */) {
+  static DataBlock* Create(BlockContents&& contents,
+                           const BlockBasedTable* table) {
+    const auto rep = table->get_rep();
     if (getenv("OLD_BLOCK") != nullptr) {
-      return new DataBlock(std::move(contents), bbtopts.read_amp_bytes_per_bit,
-                           ioptions.statistics);
+      return new DataBlock(std::move(contents),
+                           rep->table_options.read_amp_bytes_per_bit,
+                           rep->ioptions.statistics);
     } else {
       return new ParsedDataBlock(std::move(contents),
-                                 bbtopts.read_amp_bytes_per_bit,
-                                 ioptions.statistics);
+                                 rep->table_options.read_amp_bytes_per_bit,
+                                 rep->ioptions.statistics);
     }
   }
   static uint32_t GetNumRestarts(const Block& block) {
@@ -139,11 +133,8 @@ class BlocklikeTraits<DataBlock> {
 template <>
 class BlocklikeTraits<MetaBlock> {
  public:
-  static MetaBlock* Create(
-      BlockContents&& contents, const ImmutableCFOptions& /*ioptions*/,
-      const BlockBasedTableOptions& /*bbtopts*/,
-      const std::shared_ptr<const TableProperties>& /*props*/,
-      bool /* using_zstd */) {
+  static MetaBlock* Create(BlockContents&& contents,
+                           const BlockBasedTable* /*table*/) {
     return new MetaBlock(std::move(contents));
   }
 
@@ -156,12 +147,11 @@ template <>
 class BlocklikeTraits<IndexBlock> {
  public:
   static IndexBlock* Create(BlockContents&& contents,
-                            const ImmutableCFOptions& /*ioptions*/,
-                            const BlockBasedTableOptions& /*bbtopts*/,
-                            const std::shared_ptr<const TableProperties>& props,
-                            bool /* using_zstd */) {
+                            const BlockBasedTable* table) {
+    const auto rep = table->get_rep();
+
     return new IndexBlock(std::move(contents),
-                          props->index_value_is_delta_encoded);
+                          rep->table_properties->index_value_is_delta_encoded);
   }
 
   static uint32_t GetNumRestarts(const IndexBlock& block) {
@@ -172,13 +162,11 @@ class BlocklikeTraits<IndexBlock> {
 template <>
 class BlocklikeTraits<UncompressionDict> {
  public:
-  static UncompressionDict* Create(
-      BlockContents&& contents, const ImmutableCFOptions& /*ioptions*/,
-      const BlockBasedTableOptions& /*bbtopts*/,
-      const std::shared_ptr<const TableProperties>& /*props*/,
-      bool using_zstd) {
+  static UncompressionDict* Create(BlockContents&& contents,
+                                   const BlockBasedTable* table) {
+    const auto rep = table->get_rep();
     return new UncompressionDict(contents.data, std::move(contents.allocation),
-                                 using_zstd);
+                                 rep->blocks_definitely_zstd_compressed);
   }
 
   static uint32_t GetNumRestarts(const UncompressionDict& /* dict */) {
@@ -187,39 +175,6 @@ class BlocklikeTraits<UncompressionDict> {
 };
 
 namespace {
-// Read the block identified by "handle" from "file".
-// The only relevant option is options.verify_checksums for now.
-// On failure return non-OK.
-// On success fill *result and return OK - caller owns *result
-// @param uncompression_dict Data for presetting the compression library's
-//    dictionary.
-template <typename TBlocklike>
-Status ReadBlockFromFile(
-    RandomAccessFileReader* file, FilePrefetchBuffer* prefetch_buffer,
-    const Footer& footer, const ReadOptions& options, const BlockHandle& handle,
-    std::unique_ptr<TBlocklike>* result, const ImmutableCFOptions& ioptions,
-    const BlockBasedTableOptions& bbtopts,
-    const std::shared_ptr<const TableProperties>& props, bool do_uncompress,
-    bool maybe_compressed, BlockType block_type,
-    const UncompressionDict& uncompression_dict,
-    const PersistentCacheOptions& cache_options, bool for_compaction,
-    bool using_zstd) {
-  assert(result);
-
-  BlockContents contents;
-  BlockFetcher block_fetcher(
-      file, prefetch_buffer, footer, options, handle, &contents, ioptions,
-      do_uncompress, maybe_compressed, block_type, uncompression_dict,
-      cache_options, GetMemoryAllocator(bbtopts), nullptr, for_compaction);
-  Status s = block_fetcher.ReadBlockContents();
-  if (s.ok()) {
-    result->reset(BlocklikeTraits<TBlocklike>::Create(
-        std::move(contents), ioptions, bbtopts, props, using_zstd));
-  }
-
-  return s;
-}
-
 // Delete the entry resided in the cache.
 template <class Entry>
 void DeleteCachedEntry(const Slice& /*key*/, void* value) {
@@ -1189,12 +1144,10 @@ Status BlockBasedTable::ReadMetaIndexBlock(
   // it is an empty block.
   std::unique_ptr<MetaBlock> metaindex;
   Status s = ReadBlockFromFile(
-      rep_->file.get(), prefetch_buffer, rep_->footer, ro,
-      rep_->footer.metaindex_handle(), &metaindex, rep_->ioptions,
-      rep_->table_options, rep_->table_properties, true /* decompress */,
-      true /*maybe_compressed*/, BlockType::kMetaIndex,
-      UncompressionDict::GetEmptyDict(), rep_->persistent_cache_options,
-      false /* for_compaction */, rep_->blocks_definitely_zstd_compressed);
+      prefetch_buffer, ro, rep_->footer.metaindex_handle(),
+      true /* decompress */, true /*maybe_compressed*/, BlockType::kMetaIndex,
+      UncompressionDict::GetEmptyDict(), false /* for_compaction */,
+      &metaindex);
 
   if (!s.ok()) {
     ROCKS_LOG_ERROR(rep_->ioptions.info_log,
@@ -1275,10 +1228,8 @@ Status BlockBasedTable::GetDataBlockFromCache(
   // Insert uncompressed block into block cache
   if (s.ok()) {
     std::unique_ptr<TBlocklike> block_holder(
-        BlocklikeTraits<TBlocklike>::Create(
-            std::move(contents), rep_->ioptions, rep_->table_options,
-            rep_->table_properties,
-            rep_->blocks_definitely_zstd_compressed));  // uncompressed block
+        BlocklikeTraits<TBlocklike>::Create(std::move(contents),
+                                            this));  // uncompressed block
 
     if (block_cache != nullptr && block_holder->own_bytes() &&
         read_options.fill_cache) {
@@ -1345,13 +1296,10 @@ Status BlockBasedTable::PutDataBlockToCache(
     }
 
     block_holder.reset(BlocklikeTraits<TBlocklike>::Create(
-        std::move(uncompressed_block_contents), rep_->ioptions,
-        rep_->table_options, rep_->table_properties,
-        rep_->blocks_definitely_zstd_compressed));
+        std::move(uncompressed_block_contents), this));
   } else {
     block_holder.reset(BlocklikeTraits<TBlocklike>::Create(
-        std::move(*raw_block_contents), rep_->ioptions, rep_->table_options,
-        rep_->table_properties, rep_->blocks_definitely_zstd_compressed));
+        std::move(*raw_block_contents), this));
   }
 
   // Insert compressed block into compressed block cache.
@@ -1441,31 +1389,17 @@ Status BlockBasedTable::RetrieveDataBlock(
     const BlockHandle& handle, CachableEntry<DataBlock>* block,
     BlockType block_type, GetContext* get_context,
     BlockCacheLookupContext* lookup_context, bool for_compaction,
-    bool use_cache /*= true*/) const {
-  CachableEntry<UncompressionDict> uncompression_dict;
-  Status s;
-  if (rep_->uncompression_dict_reader) {
-    const bool no_io = (ro.read_tier == kBlockCacheTier);
-    s = rep_->uncompression_dict_reader->GetOrReadUncompressionDictionary(
-        prefetch_buffer, no_io, get_context, lookup_context,
-        &uncompression_dict);
-    if (!s.ok()) {
-      return s;
-    }
-  }
+    const UncompressionDict& dict, bool use_cache /*= true*/) const {
+  assert(block);
+  assert(block->IsEmpty());
 
-  const UncompressionDict& dict = uncompression_dict.GetValue()
-                                      ? *uncompression_dict.GetValue()
-                                      : UncompressionDict::GetEmptyDict();
-
-  s = RetrieveBlock(prefetch_buffer, ro, handle, dict, block, block_type,
+  Status s =
+      RetrieveBlock(prefetch_buffer, ro, handle, dict, block, block_type,
                     get_context, lookup_context, for_compaction, use_cache);
-
   if (!s.ok()) {
     assert(block->IsEmpty());
     return s;
   }
-
   assert(block->GetValue() != nullptr);
 
   return s;
@@ -1518,14 +1452,28 @@ DataBlockIter* BlockBasedTable::NewDataBlockIterator(
     BlockType block_type, GetContext* get_context,
     BlockCacheLookupContext* lookup_context,
     FilePrefetchBuffer* prefetch_buffer, bool for_compaction) const {
+  CachableEntry<UncompressionDict> uncompression_dict;
+  CachableEntry<DataBlock> block;
+  Status s;
   PERF_TIMER_GUARD(new_table_block_iter_nanos);
 
   DataBlockIter* iter = input_iter != nullptr ? input_iter : new DataBlockIter;
+  if (rep_->uncompression_dict_reader) {
+    const bool no_io = (ro.read_tier == kBlockCacheTier);
+    s = rep_->uncompression_dict_reader->GetOrReadUncompressionDictionary(
+        prefetch_buffer, no_io, get_context, lookup_context,
+        &uncompression_dict);
+  }
 
-  CachableEntry<DataBlock> block;
-  Status s = RetrieveDataBlock(prefetch_buffer, ro, handle, &block, block_type,
-                               get_context, lookup_context, for_compaction,
-                               /* use_cache */ true);
+  if (s.ok()) {
+    const UncompressionDict& dict = uncompression_dict.GetValue()
+                                        ? *uncompression_dict.GetValue()
+                                        : UncompressionDict::GetEmptyDict();
+
+    s = RetrieveDataBlock(prefetch_buffer, ro, handle, &block, block_type,
+                          get_context, lookup_context, for_compaction, dict,
+                          /* use_cache */ true);
+  }
   if (!s.ok()) {
     iter->Invalidate(s);
     return iter;
@@ -2114,6 +2062,28 @@ void BlockBasedTable::RetrieveMultipleBlocks(
 }
 
 template <typename TBlocklike>
+Status BlockBasedTable::ReadBlockFromFile(
+    FilePrefetchBuffer* prefetch_buffer, const ReadOptions& options,
+    const BlockHandle& handle, bool do_uncompress, bool maybe_compressed,
+    BlockType block_type, const UncompressionDict& uncompression_dict,
+    bool for_compaction, std::unique_ptr<TBlocklike>* result) const {
+  assert(result);
+
+  BlockContents contents;
+  BlockFetcher block_fetcher(
+      rep_->file.get(), prefetch_buffer, rep_->footer, options, handle,
+      &contents, rep_->ioptions, do_uncompress, maybe_compressed, block_type,
+      uncompression_dict, rep_->persistent_cache_options,
+      GetMemoryAllocator(rep_->table_options), nullptr, for_compaction);
+  Status s = block_fetcher.ReadBlockContents();
+  if (s.ok()) {
+    result->reset(
+        BlocklikeTraits<TBlocklike>::Create(std::move(contents), this));
+  }
+
+  return s;
+}
+template <typename TBlocklike>
 Status BlockBasedTable::RetrieveBlock(
     FilePrefetchBuffer* prefetch_buffer, const ReadOptions& ro,
     const BlockHandle& handle, const UncompressionDict& uncompression_dict,
@@ -2123,12 +2093,11 @@ Status BlockBasedTable::RetrieveBlock(
   assert(block_entry);
   assert(block_entry->IsEmpty());
 
-  Status s;
   if (use_cache) {
-    s = MaybeReadBlockAndLoadToCache(prefetch_buffer, ro, handle,
-                                     uncompression_dict, block_entry,
-                                     block_type, get_context, lookup_context,
-                                     /*contents=*/nullptr);
+    Status s = MaybeReadBlockAndLoadToCache(
+        prefetch_buffer, ro, handle, uncompression_dict, block_entry,
+        block_type, get_context, lookup_context,
+        /*contents=*/nullptr);
 
     if (!s.ok()) {
       return s;
@@ -2153,16 +2122,13 @@ Status BlockBasedTable::RetrieveBlock(
       rep_->blocks_maybe_compressed;
   const bool do_uncompress = maybe_compressed;
   std::unique_ptr<TBlocklike> block;
-
+  Status s;
   {
     StopWatch sw(rep_->ioptions.env, rep_->ioptions.statistics,
                  READ_BLOCK_GET_MICROS);
-    s = ReadBlockFromFile(rep_->file.get(), prefetch_buffer, rep_->footer, ro,
-                          handle, &block, rep_->ioptions, rep_->table_options,
-                          rep_->table_properties, do_uncompress,
+    s = ReadBlockFromFile(prefetch_buffer, ro, handle, do_uncompress,
                           maybe_compressed, block_type, uncompression_dict,
-                          rep_->persistent_cache_options, for_compaction,
-                          rep_->blocks_definitely_zstd_compressed);
+                          for_compaction, &block);
 
     if (get_context) {
       switch (block_type) {
