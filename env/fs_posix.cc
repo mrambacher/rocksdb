@@ -550,9 +550,16 @@ class PosixFileSystem : public FileSystem {
     return IOStatus::OK();
   }
 
+  IOStatus NewLogger(const std::string& fname, const IOOptions& opts,
+                     std::shared_ptr<Logger>* result,
+                     IODebugContext* dbg) override {
+    return NewLogger(fname, opts, SystemClock::Default(), result, dbg);
+  }
+
   IOStatus NewLogger(const std::string& fname, const IOOptions& /*opts*/,
-                   std::shared_ptr<Logger>* result,
-                   IODebugContext* /*dbg*/) override {
+                     const std::shared_ptr<SystemClock>& clock,
+                     std::shared_ptr<Logger>* result,
+                     IODebugContext* /*dbg*/) override {
     FILE* f;
     {
       IOSTATS_TIMER_GUARD(open_nanos);
@@ -575,7 +582,7 @@ class PosixFileSystem : public FileSystem {
       fallocate(fd, FALLOC_FL_KEEP_SIZE, 0, 4 * 1024);
 #endif
       SetFD_CLOEXEC(fd, nullptr);
-      result->reset(new PosixLogger(f, &gettid, Env::Default()));
+      result->reset(new PosixLogger(f, &gettid, clock));
       return IOStatus::OK();
     }
   }

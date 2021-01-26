@@ -61,7 +61,8 @@ AutoRollLogger::AutoRollLogger(const std::shared_ptr<FileSystem>& fs,
 
 Status AutoRollLogger::ResetLogger() {
   TEST_SYNC_POINT("AutoRollLogger::ResetLogger:BeforeNewLogger");
-  status_ = fs_->NewLogger(log_fname_, io_options_, &logger_, &io_context_);
+  status_ =
+      fs_->NewLogger(log_fname_, io_options_, clock_, &logger_, &io_context_);
   TEST_SYNC_POINT("AutoRollLogger::ResetLogger:AfterNewLogger");
 
   if (!status_.ok()) {

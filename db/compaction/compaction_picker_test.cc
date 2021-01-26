@@ -21,6 +21,7 @@ namespace ROCKSDB_NAMESPACE {
 class CountingLogger : public Logger {
  public:
   using Logger::Logv;
+  const char* Name() const override { return "CountingLogger"; }
   void Logv(const char* /*format*/, va_list /*ap*/) override { log_count++; }
   size_t log_count;
 };

@@ -405,6 +405,7 @@ class StringSource : public FSRandomAccessFile {
 class NullLogger : public Logger {
  public:
   using Logger::Logv;
+  const char* Name() const override { return "NullLogger"; }
   virtual void Logv(const char* /*format*/, va_list /*ap*/) override {}
   virtual size_t GetLogFileSize() const override { return 0; }
 };

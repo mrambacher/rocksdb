@@ -505,6 +505,13 @@ class LegacyFileSystemWrapper : public FileSystem {
     return status_to_io_status(target_->NewLogger(fname, result));
   }
 
+  IOStatus NewLogger(const std::string& fname, const IOOptions& /*options*/,
+                     const std::shared_ptr<SystemClock>& /*clock*/,
+                     std::shared_ptr<Logger>* result,
+                     IODebugContext* /*dbg*/) override {
+    return status_to_io_status(target_->NewLogger(fname, result));
+  }
+
   void SanitizeFileOptions(FileOptions* opts) const override {
     target_->SanitizeEnvOptions(opts);
   }

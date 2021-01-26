@@ -13,7 +13,6 @@
 
 #include "file/filename.h"
 #include "port/port.h"
-#include "port/util_logger.h"
 #include "test_util/sync_point.h"
 #include "util/mutexlock.h"
 
@@ -31,6 +30,8 @@ class AutoRollLogger : public Logger {
                  size_t log_max_size, size_t log_file_time_to_roll,
                  size_t keep_log_file_num,
                  const InfoLogLevel log_level = InfoLogLevel::INFO_LEVEL);
+
+  const char* Name() const override { return "AutoRollLogger"; }
 
   using Logger::Logv;
   void Logv(const char* format, va_list ap) override;

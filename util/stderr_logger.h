@@ -26,6 +26,8 @@ class StderrLogger : public Logger {
     vfprintf(stderr, format, ap);
     fprintf(stderr, "\n");
   }
+
+  const char* Name() const override { return "StderrLogger"; }
 };
 
 }  // namespace ROCKSDB_NAMESPACE

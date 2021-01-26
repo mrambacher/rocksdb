@@ -57,7 +57,6 @@
 #include "file/filename.h"
 #include "file/random_access_file_reader.h"
 #include "file/sst_file_manager_impl.h"
-#include "logging/auto_roll_logger.h"
 #include "logging/log_buffer.h"
 #include "logging/logging.h"
 #include "memtable/hash_linklist_rep.h"

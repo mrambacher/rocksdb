@@ -15,16 +15,13 @@
 #include <stdint.h>
 #include <windows.h>
 
-#include <atomic>
-#include <memory>
-
-#include "rocksdb/env.h"
+#include "logging/file_logger.h"
 
 namespace ROCKSDB_NAMESPACE {
 class SystemClock;
 
 namespace port {
-class WinLogger : public ROCKSDB_NAMESPACE::Logger {
+class WinLogger : public ROCKSDB_NAMESPACE::FileLogger {
  public:
   WinLogger(uint64_t (*gettid)(), const std::shared_ptr<SystemClock>& clock,
             HANDLE file,
@@ -35,31 +32,17 @@ class WinLogger : public ROCKSDB_NAMESPACE::Logger {
   WinLogger(const WinLogger&) = delete;
 
   WinLogger& operator=(const WinLogger&) = delete;
+  const char* Name() const override { return "WindowsLogger"; }
 
-  void Flush() override;
-
-  using ROCKSDB_NAMESPACE::Logger::Logv;
-  void Logv(const char* format, va_list ap) override;
-
-  size_t GetLogFileSize() const override;
-
-  void DebugWriter(const char* str, int len);
-
-protected:
-
-    Status CloseImpl() override;
+ protected:
+  virtual uint64_t GetThreadID() const override;
+  virtual Status FlushLocked() override;
+  virtual Status WriteLocked(const char* data, size_t size) override;
+  virtual Status CloseLocked() override;
 
  private:
   HANDLE file_;
   uint64_t (*gettid_)();  // Return the thread id for the current thread
-  std::atomic_size_t log_size_;
-  std::atomic_uint_fast64_t last_flush_micros_;
-  std::shared_ptr<SystemClock> clock_;
-  bool flush_pending_;
-
-  Status CloseInternal();
-
-  const static uint64_t flush_every_seconds_ = 5;
 };
 }
 

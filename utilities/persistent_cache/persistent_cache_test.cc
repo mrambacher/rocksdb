@@ -52,6 +52,8 @@ class ConsoleLogger : public Logger {
   using Logger::Logv;
   ConsoleLogger() : Logger(InfoLogLevel::ERROR_LEVEL) {}
 
+  const char* Name() const override { return "ConsoleLogger"; }
+
   void Logv(const char* format, va_list ap) override {
     MutexLock _(&lock_);
     vprintf(format, ap);

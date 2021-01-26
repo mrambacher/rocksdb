@@ -106,7 +106,7 @@ class WinClock : public SystemClock {
 class WinFileSystem : public FileSystem {
  public:
   static const std::shared_ptr<WinFileSystem>& Default();
-  WinFileSystem(const std::shared_ptr<SystemClock>& clock);
+  WinFileSystem();
   ~WinFileSystem() {}
   const char* Name() const { return "WinFS"; }
   static size_t GetSectorSize(const std::string& fname);
@@ -201,6 +201,10 @@ class WinFileSystem : public FileSystem {
   IOStatus NewLogger(const std::string& fname, const IOOptions& io_opts,
                      std::shared_ptr<Logger>* result,
                      IODebugContext* dbg) override;
+  IOStatus NewLogger(const std::string& fname, const IOOptions& io_opts,
+                     const std::shared_ptr<SystemClock>& clock,
+                     std::shared_ptr<Logger>* result,
+                     IODebugContext* dbg) override;
   // Get full directory name for this db.
   IOStatus GetAbsolutePath(const std::string& db_path, const IOOptions& options,
                            std::string* output_path,
@@ -231,7 +235,6 @@ class WinFileSystem : public FileSystem {
                                     bool reopen);
 
  private:
-  std::shared_ptr<SystemClock> clock_;
   size_t page_size_;
   size_t allocation_granularity_;
 };

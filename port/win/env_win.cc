@@ -182,8 +182,8 @@ Status WinClock::GetCurrentTime(int64_t* unix_time) {
   return Status::OK();
 }
 
-WinFileSystem::WinFileSystem(const std::shared_ptr<SystemClock>& clock)
-    : clock_(clock), page_size_(4 * 1024), allocation_granularity_(page_size_) {
+WinFileSystem::WinFileSystem()
+    : page_size_(4 * 1024), allocation_granularity_(page_size_) {
   SYSTEM_INFO sinfo;
   GetSystemInfo(&sinfo);
 
@@ -192,8 +192,7 @@ WinFileSystem::WinFileSystem(const std::shared_ptr<SystemClock>& clock)
 }
 
 const std::shared_ptr<WinFileSystem>& WinFileSystem::Default() {
-  static std::shared_ptr<WinFileSystem> fs =
-      std::make_shared<WinFileSystem>(WinClock::Default());
+  static std::shared_ptr<WinFileSystem> fs = std::make_shared<WinFileSystem>();
   return fs;
 }
 
@@ -1023,7 +1022,15 @@ IOStatus WinFileSystem::GetTestDirectory(const IOOptions& opts,
 }
 
 IOStatus WinFileSystem::NewLogger(const std::string& fname,
+                                  const IOOptions& opts,
+                                  std::shared_ptr<Logger>* result,
+                                  IODebugContext* dbg) {
+  return NewLogger(fname, opts, WinClock::Default(), result, dbg);
+}
+
+IOStatus WinFileSystem::NewLogger(const std::string& fname,
                                   const IOOptions& /*opts*/,
+                                  const std::shared_ptr<SystemClock>& clock,
                                   std::shared_ptr<Logger>* result,
                                   IODebugContext* /*dbg*/) {
   IOStatus s;
@@ -1059,7 +1066,7 @@ IOStatus WinFileSystem::NewLogger(const std::string& fname,
       // Set creation, last access and last write time to the same value
       SetFileTime(hFile, &ft, &ft, &ft);
     }
-    result->reset(new WinLogger(&WinEnvThreads::gettid, clock_, hFile));
+    result->reset(new WinLogger(&WinEnvThreads::gettid, clock, hFile));
   }
   return s;
 }

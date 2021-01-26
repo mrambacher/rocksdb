@@ -312,7 +312,6 @@ TEST_F(AutoRollLoggerTest, CreateLoggerFromOptions) {
 
   // Normal logger
   ASSERT_OK(CreateLoggerFromOptions(kTestDir, options, &logger));
-  ASSERT_TRUE(dynamic_cast<PosixLogger*>(logger.get()));
 
   // Only roll by size
   InitTestDb();
@@ -468,7 +467,7 @@ TEST_F(AutoRollLoggerTest, LogFlushWhileRolling) {
   // (1) Need to pin the old logger before beginning the roll, as rolling grabs
   //     the mutex, which would prevent us from accessing the old logger. This
   //     also marks flush_thread with AutoRollLogger::Flush:PinnedLogger.
-  // (2) Need to reset logger during PosixLogger::Flush() to exercise a race
+  // (2) Need to reset logger during Flush() to exercise a race
   //     condition case, which is executing the flush with the pinned (old)
   //     logger after auto-roll logger has cut over to a new logger.
   // (3) PosixLogger::Flush() happens in both threads but its SyncPoints only
@@ -476,12 +475,12 @@ TEST_F(AutoRollLoggerTest, LogFlushWhileRolling) {
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->LoadDependencyAndMarkers(
       {{"AutoRollLogger::Flush:PinnedLogger",
         "AutoRollLoggerTest::LogFlushWhileRolling:PreRollAndPostThreadInit"},
-       {"PosixLogger::Flush:Begin1",
+       {"FileLogger::Flush:Begin1",
         "AutoRollLogger::ResetLogger:BeforeNewLogger"},
        {"AutoRollLogger::ResetLogger:AfterNewLogger",
-        "PosixLogger::Flush:Begin2"}},
-      {{"AutoRollLogger::Flush:PinnedLogger", "PosixLogger::Flush:Begin1"},
-       {"AutoRollLogger::Flush:PinnedLogger", "PosixLogger::Flush:Begin2"}});
+        "FileLogger::Flush:Begin2"}},
+      {{"AutoRollLogger::Flush:PinnedLogger", "FileLogger::Flush:Begin1"},
+       {"AutoRollLogger::Flush:PinnedLogger", "FileLogger::Flush:Begin2"}});
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
 
   flush_thread = port::Thread([&]() { auto_roll_logger->Flush(); });

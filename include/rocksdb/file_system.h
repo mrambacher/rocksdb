@@ -40,6 +40,7 @@ class FSSequentialFile;
 class FSWritableFile;
 class Logger;
 class Slice;
+class SystemClock;
 struct ImmutableDBOptions;
 struct MutableDBOptions;
 class RateLimiter;
@@ -469,6 +470,12 @@ class FileSystem {
   virtual IOStatus NewLogger(const std::string& fname, const IOOptions& io_opts,
                              std::shared_ptr<Logger>* result,
                              IODebugContext* dbg) = 0;
+  virtual IOStatus NewLogger(const std::string& fname, const IOOptions& io_opts,
+                             const std::shared_ptr<SystemClock>& /*clock*/,
+                             std::shared_ptr<Logger>* result,
+                             IODebugContext* dbg) {
+    return NewLogger(fname, io_opts, result, dbg);
+  }
 
   // Get full directory name for this db.
   virtual IOStatus GetAbsolutePath(const std::string& db_path,
@@ -1201,6 +1208,13 @@ class FileSystemWrapper : public FileSystem {
                      std::shared_ptr<Logger>* result,
                      IODebugContext* dbg) override {
     return target_->NewLogger(fname, options, result, dbg);
+  }
+
+  IOStatus NewLogger(const std::string& fname, const IOOptions& options,
+                     const std::shared_ptr<SystemClock>& clock,
+                     std::shared_ptr<Logger>* result,
+                     IODebugContext* dbg) override {
+    return target_->NewLogger(fname, options, clock, result, dbg);
   }
 
   void SanitizeFileOptions(FileOptions* opts) const override {
