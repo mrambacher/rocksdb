@@ -11,6 +11,7 @@
 
 #include "db/range_tombstone_fragmenter.h"
 #include "file/filename.h"
+#include "table/block_based/block.h"
 #include "table/block_based/block_based_table_factory.h"
 #include "table/block_based/block_type.h"
 #include "table/block_based/cachable_entry.h"
@@ -19,7 +20,6 @@
 #include "table/table_properties_internal.h"
 #include "table/table_reader.h"
 #include "table/two_level_iterator.h"
-
 #include "trace_replay/block_cache_tracer.h"
 
 namespace ROCKSDB_NAMESPACE {

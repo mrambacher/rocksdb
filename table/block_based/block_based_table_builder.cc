@@ -23,7 +23,6 @@
 
 #include "db/dbformat.h"
 #include "index_builder.h"
-#include "memory/memory_allocator.h"
 #include "rocksdb/cache.h"
 #include "rocksdb/comparator.h"
 #include "rocksdb/env.h"
@@ -41,6 +40,7 @@
 #include "table/block_based/full_filter_block.h"
 #include "table/block_based/partitioned_filter_block.h"
 #include "table/format.h"
+#include "table/meta_blocks.h"
 #include "table/table_builder.h"
 #include "util/coding.h"
 #include "util/compression.h"
