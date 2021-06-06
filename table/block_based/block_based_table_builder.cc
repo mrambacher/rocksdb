@@ -1739,12 +1739,13 @@ void BlockBasedTableBuilder::EnterUnbuffered() {
       dict, r->compression_type == kZSTD ||
                 r->compression_type == kZSTDNotFinalCompression));
 
-  auto get_iterator_for_block = [&r](size_t i) {
+  auto get_iterator_for_block = [&r](size_t i,
+                                     std::unique_ptr<DataBlock>* reader) {
     auto& data_block = r->data_block_buffers[i];
     assert(!data_block.empty());
 
-    Block reader{BlockContents{data_block}};
-    DataBlockIter* iter = reader.NewDataIterator(
+    reader->reset(new DataBlock(BlockContents(data_block)));
+    DataBlockIter* iter = reader->get()->NewDataIterator(
         r->internal_comparator.user_comparator(), kDisableGlobalSequenceNumber);
 
     iter->SeekToFirst();
@@ -1753,18 +1754,19 @@ void BlockBasedTableBuilder::EnterUnbuffered() {
   };
 
   std::unique_ptr<DataBlockIter> iter = nullptr, next_block_iter = nullptr;
+  std::unique_ptr<DataBlock> block = nullptr, next_block = nullptr;
 
   for (size_t i = 0; ok() && i < r->data_block_buffers.size(); ++i) {
     if (iter == nullptr) {
-      iter = get_iterator_for_block(i);
+      iter = get_iterator_for_block(i, &block);
       assert(iter != nullptr);
     };
 
     if (i + 1 < r->data_block_buffers.size()) {
-      next_block_iter = get_iterator_for_block(i + 1);
+      next_block_iter = get_iterator_for_block(i + 1, &next_block);
     }
 
-    auto& data_block = r->data_block_buffers[i];
+    auto& data_buffer = r->data_block_buffers[i];
 
     if (r->IsParallelCompressionEnabled()) {
       Slice first_key_in_next_block;
@@ -1782,7 +1784,8 @@ void BlockBasedTableBuilder::EnterUnbuffered() {
       }
 
       ParallelCompressionRep::BlockRep* block_rep = r->pc_rep->PrepareBlock(
-          r->compression_type, first_key_in_next_block_ptr, &data_block, &keys);
+          r->compression_type, first_key_in_next_block_ptr, &data_buffer,
+          &keys);
 
       assert(block_rep != nullptr);
       r->pc_rep->file_size_estimator.EmitBlock(block_rep->data->size(),
@@ -1798,7 +1801,7 @@ void BlockBasedTableBuilder::EnterUnbuffered() {
         }
         r->index_builder->OnKeyAdded(key);
       }
-      WriteBlock(Slice(data_block), &r->pending_handle,
+      WriteBlock(Slice(data_buffer), &r->pending_handle,
                  true /* is_data_block */);
       if (ok() && i + 1 < r->data_block_buffers.size()) {
         assert(next_block_iter != nullptr);
@@ -1814,6 +1817,7 @@ void BlockBasedTableBuilder::EnterUnbuffered() {
     }
 
     std::swap(iter, next_block_iter);
+    std::swap(block, next_block);
   }
   r->data_block_buffers.clear();
 }

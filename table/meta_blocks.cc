@@ -246,10 +246,8 @@ Status ReadProperties(const ReadOptions& read_options,
     return s;
   }
 
-  Block properties_block(std::move(block_contents));
-  DataBlockIter iter;
-  properties_block.NewDataIterator(BytewiseComparator(),
-                                   kDisableGlobalSequenceNumber, &iter);
+  MetaBlock properties_block(std::move(block_contents));
+  std::unique_ptr<MetaBlockIter> iter(properties_block.NewIterator(false));
 
   auto new_table_properties = new TableProperties();
   // All pre-defined properties of type uint64_t
@@ -298,13 +296,13 @@ Status ReadProperties(const ReadOptions& read_options,
   };
 
   std::string last_key;
-  for (iter.SeekToFirstOrReport(); iter.Valid(); iter.NextOrReport()) {
-    s = iter.status();
+  for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+    s = iter->status();
     if (!s.ok()) {
       break;
     }
 
-    auto key = iter.key().ToString();
+    auto key = iter->key().ToString();
     // properties block should be strictly sorted with no duplicate key.
     if (!last_key.empty() &&
         BytewiseComparator()->Compare(key, last_key) <= 0) {
@@ -313,11 +311,11 @@ Status ReadProperties(const ReadOptions& read_options,
     }
     last_key = key;
 
-    auto raw_val = iter.value();
+    auto raw_val = iter->value();
     auto pos = predefined_uint64_properties.find(key);
 
     new_table_properties->properties_offsets.insert(
-        {key, handle.offset() + iter.ValueOffset()});
+        {key, handle.offset() + iter->ValueOffset()});
 
     if (pos != predefined_uint64_properties.end()) {
       if (key == TablePropertiesNames::kDeletedKeys ||
@@ -418,7 +416,7 @@ Status ReadTableProperties(RandomAccessFileReader* file, uint64_t file_size,
   }
   // property blocks are never compressed. Need to add uncompress logic if we
   // are to compress it.
-  Block metaindex_block(std::move(metaindex_contents));
+  DataBlock metaindex_block(std::move(metaindex_contents));
   std::unique_ptr<InternalIterator> meta_iter(metaindex_block.NewDataIterator(
       BytewiseComparator(), kDisableGlobalSequenceNumber));
 
@@ -488,7 +486,7 @@ Status FindMetaBlock(RandomAccessFileReader* file, uint64_t file_size,
   }
   // meta blocks are never compressed. Need to add uncompress logic if we are to
   // compress it.
-  Block metaindex_block(std::move(metaindex_contents));
+  DataBlock metaindex_block(std::move(metaindex_contents));
 
   std::unique_ptr<InternalIterator> meta_iter;
   meta_iter.reset(metaindex_block.NewDataIterator(
@@ -533,7 +531,7 @@ Status ReadMetaBlock(RandomAccessFileReader* file,
   // compress it.
 
   // Finding metablock
-  Block metaindex_block(std::move(metaindex_contents));
+  DataBlock metaindex_block(std::move(metaindex_contents));
 
   std::unique_ptr<InternalIterator> meta_iter;
   meta_iter.reset(metaindex_block.NewDataIterator(
