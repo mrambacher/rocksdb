@@ -1024,4 +1024,139 @@ size_t DataBlock::ApproximateMemoryUsage() const {
   return usage;
 }
 
+DecodedDataBlock::DecodedDataBlock(BlockContents&& contents,
+                                   size_t read_amp_bytes_per_bit,
+                                   Statistics* statistics)
+    : DataBlock(std::move(contents), read_amp_bytes_per_bit, statistics) {
+  if (limit_ > 0) {
+    const char* current = data_;
+    const char* limit = data_ + limit_;
+    Slice prev_key;
+    int count = 0;
+    uint32_t restart = 0;
+    while (current < limit) {
+      Slice key;
+      // Decode next entry
+      uint32_t shared, non_shared, value_length;
+      const char* next =
+          DecodeEntry(current, limit, &shared, &non_shared, &value_length);
+      if (next == nullptr) {
+        limit_ = 0;
+        break;
+      } else {
+        Slice value(next + non_shared, value_length);
+        if (shared == 0) {
+          // The key does not share any data with the previous key
+          // We can use the bytes directly
+          if (restart < num_restarts_ &&
+              DataBlock::GetRestartPoint(restart) == (current - data_)) {
+            restart_indices_.push_back(static_cast<uint32_t>(entries_.size()));
+            restart++;
+          }
+          entries_.emplace_back(DecodedEntry(next, non_shared, value));
+        } else if (prev_key.data() == nullptr) {
+          // The first key cannot have a non-zero shared.  Corrupt buffer
+          assert(false);
+          limit_ = 0;
+          break;
+        } else {
+          // The key shares bytes with the previous key
+          // Copy the key contents into key data
+          if (prev_key.size() < shared) {
+            // The shared key size is longer than the prev key.  Corrupt buffer
+            assert(false);
+            limit_ = 0;
+            break;
+          }
+          // The key is delta encoded.  Copy the decoded key into the buffer
+          size_t offset = key_buff_.size();
+          key_buff_.append(prev_key.data(), shared);
+          key_buff_.append(next, non_shared);
+          entries_.emplace_back(
+              DecodedEntry(&key_buff_, offset, shared + non_shared, value));
+        }
+        count++;
+      }
+      prev_key = entries_.back().key();
+      current = next + non_shared + value_length;
+    }
+  }
+}
+
+uint32_t DecodedDataBlock::GetRestartPoint(uint32_t index) const {
+  if (index < restart_indices_.size()) {
+    return restart_indices_[index];
+  } else {
+    return static_cast<uint32_t>(entries_.size());
+  }
+}
+
+Slice DecodedDataBlock::DecodeKeyAtRestart(uint32_t index) const {
+  if (index < restart_indices_.size()) {
+    auto entry_index = restart_indices_[index];
+    return entries_[entry_index].key();
+  } else {
+    return Slice();
+  }
+}
+
+uint32_t DecodedDataBlock::ParseKVAfter(uint32_t offset, IterKey* key,
+                                        bool* shared, Slice* value) const {
+  if (offset < entries_.size()) {
+    const auto& entry = entries_[offset];
+    key->SetKey(entry.key(), false);
+    *shared = entry.KeyIsShared();
+    *value = entry.value();
+    return offset + 1;
+  } else {
+    return 0;  // No more entries
+  }
+}
+
+uint32_t DecodedDataBlock::ParseKVBefore(uint32_t offset, IterKey* key,
+                                         bool* shared, Slice* value) const {
+  if (offset > 0) {
+    uint32_t prev = offset - 1;
+    const auto& entry = entries_[prev];
+    key->SetKey(entry.key(), false);
+    *shared = entry.KeyIsShared();
+    *value = entry.value();
+    return prev;
+  } else {
+    return static_cast<uint32_t>(entries_.size());
+  }
+}
+
+size_t DecodedDataBlock::ApproximateMemoryUsage() const {
+  return DataBlock::ApproximateMemoryUsage() + key_buff_.size();
+}
+
+uint32_t DecodedDataBlock::GetOffsetForEntry(uint32_t entry) const {
+  if (entry == 0) {
+    return 0;
+  } else if (entry >= entries_.size()) {
+    return limit();
+  } else {
+    // The entry ends after the value entry of the previous one
+    const auto& prev = entries_[entry - 1].value();
+    return static_cast<uint32_t>(prev.size() + (prev.data() - data_));
+  }
+}
+
+void DecodedDataBlock::MarkReadAmpBitMap(uint32_t current,
+                                         uint32_t next) const {
+  if (read_amp_bitmap_.get()) {
+    uint32_t start = GetOffsetForEntry(current);
+    uint32_t end = GetOffsetForEntry(next);
+    read_amp_bitmap_->Mark(start, end - 1);
+  }
+}
+
+uint32_t DecodedDataBlock::TEST_CurrentEntrySize(uint32_t current,
+                                                 uint32_t next) const {
+  uint32_t start = GetOffsetForEntry(current);
+  uint32_t end = GetOffsetForEntry(next);
+  return end - start;
+}
+
 }  // namespace ROCKSDB_NAMESPACE

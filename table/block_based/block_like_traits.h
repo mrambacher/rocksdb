@@ -119,10 +119,15 @@ class BlocklikeTraits<DataBlock> {
  public:
   static DataBlock* Create(BlockContents&& contents,
                            const BlockBasedTable::Rep* rep) {
-    auto block = new DataBlock(std::move(contents),
-                               rep->table_options.read_amp_bytes_per_bit,
-                               rep->ioptions.stats);
-    return block;
+    if (rep->table_options.use_decoded_data_blocks) {
+      return new DecodedDataBlock(std::move(contents),
+                                  rep->table_options.read_amp_bytes_per_bit,
+                                  rep->ioptions.stats);
+    } else {
+      return new DataBlock(std::move(contents),
+                           rep->table_options.read_amp_bytes_per_bit,
+                           rep->ioptions.stats);
+    }
   }
 
   static uint32_t GetNumRestarts(const DataBlock& block) {

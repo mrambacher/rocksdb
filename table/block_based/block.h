@@ -264,6 +264,69 @@ class DataBlock : public Block {
   std::unique_ptr<DataBlockHashIndex> data_block_hash_index_;
 };
 
+class DecodedDataBlock : public DataBlock {
+ public:
+  // Initialize the block with the specified contents.
+  explicit DecodedDataBlock(BlockContents&& contents,
+                            size_t read_amp_bytes_per_bit = 0,
+                            Statistics* statistics = nullptr);
+  virtual size_t ApproximateMemoryUsage() const override;
+
+  virtual uint32_t GetRestartPoint(uint32_t index) const override;
+  virtual Slice DecodeKeyAtRestart(uint32_t index) const override;
+  virtual uint32_t ParseKVAfter(uint32_t offset, IterKey* key, bool* shared,
+                                Slice* value) const override;
+  virtual uint32_t ParseKVBefore(uint32_t offset, IterKey* key, bool* is_shared,
+                                 Slice* value) const override;
+
+ protected:
+  virtual void MarkReadAmpBitMap(uint32_t current,
+                                 uint32_t next) const override;
+  virtual uint32_t TEST_CurrentEntrySize(uint32_t current,
+                                         uint32_t next) const override;
+  uint32_t GetOffsetForEntry(uint32_t entry) const;
+
+ private:
+  class DecodedEntry {
+   public:
+    DecodedEntry(const char* data, size_t len, const Slice& value)
+        : data_(data),
+          buff_(nullptr),
+          offset_(0),
+          length_(len),
+          value_(value) {}
+
+    DecodedEntry(const std::string* buff, size_t off, size_t len,
+                 const Slice& value)
+        : data_(nullptr),
+          buff_(buff),
+          offset_(off),
+          length_(len),
+          value_(value) {}
+
+    bool KeyIsShared() const { return data_ != nullptr; }
+    Slice key() const {
+      if (buff_ != nullptr) {
+        return Slice(buff_->data() + offset_, length_);
+      } else {
+        return Slice(data_ + offset_, length_);
+      }
+    }
+    const Slice& value() const { return value_; }
+
+   private:
+    const char* data_;         // The DataBlock buffer (null if delta encoded)
+    const std::string* buff_;  // The encoded buffer (if delta encoded)
+    size_t offset_;            // Offset of the entry
+    size_t length_;            // Length of the entry
+    Slice value_;              // The value
+  };
+
+  std::vector<DecodedEntry> entries_;
+  std::vector<uint32_t> restart_indices_;
+  std::string key_buff_;
+};
+
 class MetaBlock : public Block {
  public:
   // Initialize the block with the specified contents.

@@ -462,6 +462,10 @@ struct BlockBasedTableOptions {
   //
   // Default: 256 KB (256 * 1024).
   size_t max_auto_readahead_size = 256 * 1024;
+
+  // If true, data blocks will be decoded at construction time, rather than
+  // on-demand.
+  bool use_decoded_data_blocks = false;
 };
 
 // Table Properties that are specific to block-based table properties.

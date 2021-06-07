@@ -501,6 +501,14 @@ DEFINE_bool(
     ROCKSDB_NAMESPACE::BlockBasedTableOptions().optimize_filters_for_memory,
     "Minimize memory footprint of filters");
 
+DEFINE_bool(use_decoded_data_blocks,
+            ROCKSDB_NAMESPACE::BlockBasedTableOptions().use_decoded_data_blocks,
+            "Use decoded data blocks");
+
+DEFINE_bool(use_delta_encoding,
+            ROCKSDB_NAMESPACE::BlockBasedTableOptions().use_delta_encoding,
+            "Use delta encoding of keys");
+
 DEFINE_int64(
     index_shortening_mode, 2,
     "mode to shorten index: 0 for no shortening; 1 for only shortening "
@@ -3991,6 +3999,10 @@ class Benchmark {
       if (cache_ == nullptr) {
         block_based_options.no_block_cache = true;
       }
+      block_based_options.use_delta_encoding = FLAGS_use_delta_encoding;
+      block_based_options.use_decoded_data_blocks =
+          FLAGS_use_decoded_data_blocks;
+
       block_based_options.cache_index_and_filter_blocks =
           FLAGS_cache_index_and_filter_blocks;
       block_based_options.pin_l0_filter_and_index_blocks_in_cache =
