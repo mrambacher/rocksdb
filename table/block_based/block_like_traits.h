@@ -206,6 +206,8 @@ class BlocklikeTraits<IndexBlock> {
       default:
         // Not a recognized combination
         assert(false);
+        return GetCacheItemHelperForRole<MetaBlock,
+                                         CacheEntryRole::kOtherBlock>();
     }
   }
 };
