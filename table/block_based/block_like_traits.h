@@ -119,7 +119,8 @@ class BlocklikeTraits<DataBlock> {
  public:
   static DataBlock* Create(BlockContents&& contents,
                            const BlockBasedTable::Rep* rep) {
-    if (rep->table_options.use_decoded_data_blocks) {
+    if (rep->table_options.data_block_mode ==
+        BlockBasedTableOptions::DataBlockMode::kDecoded) {
       return new DecodedDataBlock(std::move(contents),
                                   rep->table_options.read_amp_bytes_per_bit,
                                   rep->ioptions.stats);

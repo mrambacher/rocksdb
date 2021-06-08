@@ -501,9 +501,8 @@ DEFINE_bool(
     ROCKSDB_NAMESPACE::BlockBasedTableOptions().optimize_filters_for_memory,
     "Minimize memory footprint of filters");
 
-DEFINE_bool(use_decoded_data_blocks,
-            ROCKSDB_NAMESPACE::BlockBasedTableOptions().use_decoded_data_blocks,
-            "Use decoded data blocks");
+DEFINE_int64(data_block_mode, 0,
+             "Mode for reading data blocks; 0 for encoded; 1 for decoded");
 
 DEFINE_bool(use_delta_encoding,
             ROCKSDB_NAMESPACE::BlockBasedTableOptions().use_delta_encoding,
@@ -3993,15 +3992,28 @@ class Benchmark {
         default:
           fprintf(stderr, "Unknown key shortening mode\n");
       }
+      BlockBasedTableOptions::DataBlockMode data_block_mode =
+          block_based_options.data_block_mode;
+      switch (FLAGS_data_block_mode) {
+        case 0:
+          data_block_mode = BlockBasedTableOptions::DataBlockMode::kEncoded;
+          break;
+        case 1:
+          data_block_mode = BlockBasedTableOptions::DataBlockMode::kDecoded;
+          break;
+        default:
+          fprintf(stderr, "Unknown data block mode: %d\n",
+                  (int)data_block_mode);
+      }
+
       block_based_options.optimize_filters_for_memory =
           FLAGS_optimize_filters_for_memory;
       block_based_options.index_shortening = index_shortening;
+      block_based_options.data_block_mode = data_block_mode;
       if (cache_ == nullptr) {
         block_based_options.no_block_cache = true;
       }
       block_based_options.use_delta_encoding = FLAGS_use_delta_encoding;
-      block_based_options.use_decoded_data_blocks =
-          FLAGS_use_decoded_data_blocks;
 
       block_based_options.cache_index_and_filter_blocks =
           FLAGS_cache_index_and_filter_blocks;

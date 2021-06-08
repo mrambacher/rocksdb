@@ -2111,7 +2111,7 @@ TEST_P(BlockBasedTableTest, BinaryIndexWithFirstKey2) {
     table_options.index_type =
         use_first_key ? BlockBasedTableOptions::kBinarySearchWithFirstKey
                       : BlockBasedTableOptions::kBinarySearch;
-    table_options.block_cache = NewLRUCache(10000);  // fits all blocks
+    table_options.block_cache = NewLRUCache(12000);  // fits all blocks
     table_options.index_shortening =
         BlockBasedTableOptions::IndexShorteningMode::kNoShortening;
     table_options.flush_block_policy_factory =

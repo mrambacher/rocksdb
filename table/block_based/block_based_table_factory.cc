@@ -198,6 +198,12 @@ static std::unordered_map<std::string,
          BlockBasedTableOptions::IndexShorteningMode::
              kShortenSeparatorsAndSuccessor}};
 
+static std::unordered_map<std::string, BlockBasedTableOptions::DataBlockMode>
+    block_base_table_data_block_mode_string_map = {
+        {"kEncoded", BlockBasedTableOptions::DataBlockMode::kEncoded},
+        {"kDecoded", BlockBasedTableOptions::DataBlockMode::kDecoded},
+};
+
 static std::unordered_map<std::string, OptionTypeInfo>
     metadata_cache_options_type_info = {
         {"top_level_index_pinning",
@@ -416,6 +422,10 @@ static std::unordered_map<std::string, OptionTypeInfo>
          {offsetof(struct BlockBasedTableOptions, max_auto_readahead_size),
           OptionType::kSizeT, OptionVerificationType::kNormal,
           OptionTypeFlags::kMutable}},
+        {"data_block_mode",
+         OptionTypeInfo::Enum<BlockBasedTableOptions::DataBlockMode>(
+             offsetof(struct BlockBasedTableOptions, data_block_mode),
+             &block_base_table_data_block_mode_string_map)},
 #endif  // ROCKSDB_LITE
 };
 
