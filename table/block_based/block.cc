@@ -1055,7 +1055,6 @@ DecodedDataBlock::DecodedDataBlock(BlockContents&& contents,
     const char* limit = data_ + limit_;
     Slice prev_key;
     int count = 0;
-    uint32_t restart = 0;
     while (current < limit) {
       Slice key;
       // Decode next entry
@@ -1068,13 +1067,6 @@ DecodedDataBlock::DecodedDataBlock(BlockContents&& contents,
       } else {
         Slice value(next + non_shared, value_length);
         if (shared == 0) {
-          // The key does not share any data with the previous key
-          // We can use the bytes directly
-          if (restart < num_restarts_ &&
-              DataBlock::GetRestartPoint(restart) == (current - data_)) {
-            restart_indices_.push_back(static_cast<uint32_t>(entries_.size()));
-            restart++;
-          }
           entries_.emplace_back(DecodedEntry(next, non_shared, value));
         } else if (prev_key.data() == nullptr) {
           // The first key cannot have a non-zero shared.  Corrupt buffer
@@ -1106,17 +1098,12 @@ DecodedDataBlock::DecodedDataBlock(BlockContents&& contents,
 }
 
 uint32_t DecodedDataBlock::GetRestartPoint(uint32_t index) const {
-  if (index < restart_indices_.size()) {
-    return restart_indices_[index];
-  } else {
-    return static_cast<uint32_t>(entries_.size());
-  }
+  return index;
 }
 
 Slice DecodedDataBlock::DecodeKeyAtRestart(uint32_t index) const {
-  if (index < restart_indices_.size()) {
-    auto entry_index = restart_indices_[index];
-    return entries_[entry_index].key();
+  if (index < entries_.size()) {
+    return entries_[index].key();
   } else {
     return Slice();
   }
@@ -1150,7 +1137,7 @@ uint32_t DecodedDataBlock::ParseKVBefore(uint32_t offset, IterKey* key,
 }
 
 size_t DecodedDataBlock::ApproximateMemoryUsage() const {
-  return DataBlock::ApproximateMemoryUsage() + key_buff_.size();
+  return DataBlock::ApproximateMemoryUsage() + key_buff_.size() + sizeof(DecodedEntry) & entries_.size();
 }
 
 uint32_t DecodedDataBlock::GetOffsetForEntry(uint32_t entry) const {

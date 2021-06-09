@@ -323,7 +323,6 @@ class DecodedDataBlock : public DataBlock {
   };
 
   std::vector<DecodedEntry> entries_;
-  std::vector<uint32_t> restart_indices_;
   std::string key_buff_;
 };
 
