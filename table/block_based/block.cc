@@ -1137,7 +1137,8 @@ uint32_t DecodedDataBlock::ParseKVBefore(uint32_t offset, IterKey* key,
 }
 
 size_t DecodedDataBlock::ApproximateMemoryUsage() const {
-  return DataBlock::ApproximateMemoryUsage() + key_buff_.size() + sizeof(DecodedEntry) & entries_.size();
+  return DataBlock::ApproximateMemoryUsage() + key_buff_.size() +
+         sizeof(DecodedEntry) * entries_.size();
 }
 
 uint32_t DecodedDataBlock::GetOffsetForEntry(uint32_t entry) const {
